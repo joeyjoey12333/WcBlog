@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Co Blog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#10283f;--sky:#e8f1f8;--card:#fff;--sun:#f5a623;--rain:#1d7f95;--mute:#5d7185;--line:#d5e2ed;--bg:#f3f8fc}
+@media(prefers-color-scheme:dark){:root{--ink:#e6eef6;--sky:#12283b;--card:#0f2031;--mute:#93a8bb;--line:#22405a;--bg:#0a1724}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 Figtree,system-ui,sans-serif}
+h1,h2,h3,.brand,.temp{font-family:Fraunces,Georgia,serif}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 24px;background:var(--ink);color:#f3f8fc;flex-wrap:wrap}
+.brand{font-size:26px;font-weight:700;color:#f3f8fc;text-decoration:none}.brand b{color:var(--sun)}
+nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;background:var(--sun);color:#10283f}
+.btn.ghost{background:transparent;color:inherit;border:1px solid currentColor}
+.top .ghost{color:#f3f8fc}
+.banner{background:var(--sun);color:#10283f;text-align:center;padding:8px;font-weight:700}
+.wrap{max-width:1040px;margin:28px auto;padding:0 20px;display:grid;grid-template-columns:1fr 320px;gap:28px;align-items:start}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}aside{order:-1}}
+aside{position:sticky;top:16px}@media(max-width:860px){aside{position:static}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
+.weather{background:linear-gradient(160deg,#1d5f8a,#3a97b8 60%,#f5c25c 130%);color:#fff;border:0}
+.weather form{display:flex;gap:8px}.weather input{flex:1;min-width:0;border:0;border-radius:8px;padding:9px 12px;color:#10283f}
+.temp{font-size:72px;line-height:1;margin:12px 0 4px;font-weight:700}
+.wx small{opacity:.9;display:block}
+.outfit{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.4)}
+.outfit h3{margin:0 0 6px;font-size:18px}.outfit ul{margin:0;padding-left:20px}
+.err{color:#b3261e;font-weight:500;min-height:1.4em}.weather .err{color:#ffe1dd}
+.compose{display:grid;gap:10px;margin-bottom:22px}
+.compose input,.compose select,.compose textarea,dialog input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:var(--bg)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:4px 14px;cursor:pointer;font-weight:500}
+.chip[aria-pressed=true]{background:var(--rain);border-color:var(--rain);color:#fff}
+.post{margin-bottom:20px;overflow:hidden;padding:0}
+.post img{width:100%;max-height:420px;object-fit:cover;display:block}
+.post img:not([src]){height:200px;background:var(--sky)}
+.post .in{padding:18px 22px}
+.post h2{margin:6px 0 8px;font-size:28px;line-height:1.2}
+.post p{white-space:pre-wrap;margin:0 0 12px;max-width:68ch;overflow-wrap:anywhere}
+.tag{font-weight:700;color:var(--rain);margin-right:10px}
+.badge{font-size:13px;font-weight:700;border-radius:6px;padding:1px 8px;background:var(--sky)}
+.badge.t{background:var(--sun);color:#10283f}
+.by{color:var(--mute);font-size:14px}
+.empty{color:var(--mute);text-align:center;padding:40px 10px}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:24px;width:min(400px,92vw)}
+dialog::backdrop{background:rgba(8,20,32,.6)}
+dialog form{display:grid;gap:10px}dialog h2{margin:0}
+.tabs{display:flex;gap:8px}
+#maint{position:fixed;inset:0;z-index:9;background:var(--ink);color:#f3f8fc;display:grid;place-content:center;text-align:center;padding:24px;gap:12px}
+#maint h1{font-size:40px;margin:0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="/">WC <b>Blog</b></a><nav id="nav"></nav></header>
+<div id="banner" class="banner" hidden>Maintenance mode is on. Only you can use WC Blog right now.</div>
+<div id="maint" hidden>
+  <h1>WC Blog is down for maintenance</h1>
+  <p>We're making improvements and will be back soon.</p>
+  <div><button class="btn ghost" id="devLogin">Developer log in</button></div>
+</div>
+<main class="wrap">
+  <section>
+    <div id="composeBox"></div>
+    <div class="chips" id="chips"></div>
+    <div id="feed"></div>
+  </section>
+  <aside>
+    <div class="panel weather">
+      <h2 style="margin:0 0 10px;font-size:22px">Today's weather</h2>
+      <form id="zipForm"><input id="zip" inputmode="numeric" maxlength="5" placeholder="Zip code" aria-label="Zip code" autocomplete="postal-code"><button class="btn">Check</button></form>
+      <div class="err" id="zipErr" role="alert"></div>
+      <div class="wx" id="wx"></div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="auth"><form id="authForm">
+  <div class="tabs"><button type="button" class="chip" id="tLogin">Log in</button><button type="button" class="chip" id="tSign">Sign up</button></div>
+  <h2 id="authTitle"></h2>
+  <input id="fUser" placeholder="Username" autocomplete="username" required>
+  <input id="fName" placeholder="Display name" maxlength="30">
+  <label id="fBirthL" class="by">Birthdate<input id="fBirth" type="date"></label>
+  <input id="fPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" required>
+  <input id="fDev" type="password" placeholder="Developer code" hidden>
+  <div class="err" id="authErr" role="alert"></div>
+  <button class="btn" id="authGo"></button>
+  <button type="button" class="btn ghost" style="color:var(--ink)" id="authX">Cancel</button>
+</form></dialog>
+
+<dialog id="dev"><form method="dialog">
+  <h2>Dev panel</h2>
+  <p id="devState"></p>
+  <div class="err" id="devErr" role="alert"></div>
+  <button type="button" class="btn" id="devToggle"></button>
+  <button class="btn ghost" style="color:var(--ink)">Close</button>
+</form></dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const el=(t,a={},...c)=>{const n=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==="class")n.className=v;else if(k.startsWith("on"))n.addEventListener(k.slice(2),v);else n.setAttribute(k,v)}n.append(...c);return n};
+let token=localStorage.getItem("wc_token"),me=null,maint=false,posts=[],topic="",mode="login";
+async function api(p,o={}){
+  const r=await fetch("/api"+p,{method:o.method||(o.body?"POST":"GET"),headers:{"content-type":"application/json",...(token?{authorization:"Bearer "+token}:{})},body:o.body?JSON.stringify(o.body):undefined});
+  const d=await r.json().catch(()=>({}));
+  if(r.status===503&&d.maintenance){maint=true;render()}
+  if(!r.ok)throw Object.assign(new Error(d.error||"Something went wrong. Try again."),{status:r.status});
+  return d}
+const ICON=c=>c===0?"☀️":c<=2?"⛅":c===3?"☁️":c<=48?"🌫️":c<=67?"🌧️":c<=77?"❄️":c<=82?"🌦️":c<=86?"🌨️":"⛈️";
+function outfit(f,rain,wind,code){
+  const o=f<=20?["Heavy winter coat","Hat, gloves and a scarf","Insulated boots"]:f<=40?["Warm coat","Sweater or fleece","Long pants","Hat and gloves"]:f<=55?["Light jacket","Long sleeves","Jeans or long pants"]:f<=70?["T-shirt with a light layer","Pants or shorts"]:f<=85?["T-shirt","Shorts or a skirt","Sunglasses"]:["Light, breathable clothes","Shorts","Hat, sunscreen and water"];
+  const snow=(code>=71&&code<=77)||code===85||code===86;
+  if(snow)o.push("Waterproof boots");
+  else if(rain>=40||(code>=51&&code<=67)||(code>=80&&code<=82)||code>=95)o.push("Rain jacket or umbrella","Waterproof shoes");
+  if(wind>=20)o.push("Windbreaker");
+  return o}
+async function loadWeather(){
+  const zip=$("#zip").value.trim();$("#zipErr").textContent="";
+  if(!/^\d{5}$/.test(zip)){$("#zipErr").textContent="Enter a 5-digit US zip code.";return}
+  try{const w=await api("/weather?zip="+zip);localStorage.setItem("wc_zip",zip);
+    $("#wx").replaceChildren(el("div",{class:"temp"},ICON(w.code)+" "+w.temp+"°"),
+      el("small",{},w.place),el("small",{},`Feels like ${w.feels}° · High ${w.high}° · Low ${w.low}°`),el("small",{},`Rain chance ${w.rain}% · Wind ${w.wind} mph`),
+      el("div",{class:"outfit"},el("h3",{},"What to wear today"),el("ul",{},...outfit(w.feels,w.rain,w.wind,w.code).map(x=>el("li",{},x)))))
+  }catch(e){$("#zipErr").textContent=e.message}}
+async function loadPosts(){try{posts=(await api("/posts")).posts;renderFeed()}catch(e){$("#feed").replaceChildren(el("div",{class:"empty"},e.message))}}
+function shrink(f){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>{const s=Math.min(1,900/Math.max(i.width,i.height)),c=el("canvas");c.width=Math.round(i.width*s);c.height=Math.round(i.height*s);const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(i,0,0,c.width,c.height);URL.revokeObjectURL(i.src);let o=c.toDataURL("image/jpeg",.8);if(o.length>850000)o=c.toDataURL("image/jpeg",.5);ok(o)};i.onerror=()=>no(new Error("That file isn't a readable image."));i.src=URL.createObjectURL(f)})}
+function renderCompose(){
+  const box=$("#composeBox");
+  if(!me){box.replaceChildren(el("div",{class:"panel compose"},el("strong",{},"Join the conversation"),el("span",{class:"by"},"Sign up or log in to post text, topics and images."),el("div",{},el("button",{class:"btn",onclick:()=>openAuth("signup")},"Sign up"))));return}
+  const title=el("input",{placeholder:"Post title",maxlength:100,required:""}),tp=el("input",{placeholder:"Topic (e.g. storms, gardening)",maxlength:30,required:""}),
+    rate=el("select",{},el("option",{value:"all"},"Rated for all ages"),...(me.age>=13?[el("option",{value:"13+"},"Rated 13+")]:[])),
+    body=el("textarea",{rows:4,placeholder:"What's on your mind?",maxlength:5000,required:""}),file=el("input",{type:"file",accept:"image/*"}),err=el("div",{class:"err",role:"alert"}),go=el("button",{class:"btn"},"Publish");
+  const f=el("form",{class:"panel compose",onsubmit:async e=>{e.preventDefault();err.textContent="";go.disabled=true;
+    try{const image=file.files[0]?await shrink(file.files[0]):null;await api("/posts",{body:{title:title.value,topic:tp.value,body:body.value,rating:rate.value,image}});f.reset();await loadPosts()}
+    catch(x){err.textContent=x.message}finally{go.disabled=false}}},title,el("div",{class:"row"},tp,rate),body,file,err,el("div",{},go));
+  box.replaceChildren(f)}
+const imgs=new Map();
+function postImg(p){const i=el("img",{alt:""});if(imgs.has(p.id))i.src=imgs.get(p.id);else api("/image/"+p.id).then(r=>{imgs.set(p.id,r.image);i.src=r.image}).catch(()=>i.remove());return i}
+function renderFeed(){
+  const tops=[...new Set(posts.map(p=>p.topic))];
+  $("#chips").replaceChildren(...(tops.length?[el("button",{class:"chip","aria-pressed":String(!topic),onclick:()=>{topic="";renderFeed()}},"All"),...tops.map(t=>el("button",{class:"chip","aria-pressed":String(topic===t),onclick:()=>{topic=t;renderFeed()}},"#"+t))]:[]));
+  const list=posts.filter(p=>!topic||p.topic===topic);
+  $("#feed").replaceChildren(...(list.length?list.map(p=>el("article",{class:"panel post"},...(p.hasImage?[postImg(p)]:[]),
+    el("div",{class:"in"},el("div",{},el("span",{class:"tag"},"#"+p.topic),el("span",{class:"badge"+(p.rating==="13+"?" t":"")},p.rating==="13+"?"13+":"All ages")),
+      el("h2",{},p.title),el("p",{},p.body),el("div",{class:"by"},`${p.displayName} (@${p.username}) · ${new Date(p.createdAt).toLocaleDateString()}`)))):[el("div",{class:"empty"},"No posts yet. Be the first to share something.")]))}
+function render(){
+  $("#maint").hidden=!(maint&&!(me&&me.isDev));$("#banner").hidden=!(maint&&me&&me.isDev);
+  const n=$("#nav");
+  n.replaceChildren(...(me?[el("span",{},me.displayName),...(me.isDev?[el("button",{class:"btn",onclick:openDev},"Dev panel")]:[]),el("button",{class:"btn ghost",onclick:logout},"Log out")]:[el("button",{class:"btn ghost",onclick:()=>openAuth("login")},"Log in"),el("button",{class:"btn",onclick:()=>openAuth("signup")},"Sign up")]));
+  renderCompose()}
+function openAuth(m){mode=m;const s=m==="signup";$("#authTitle").textContent=s?"Create your account":"Welcome back";$("#authGo").textContent=s?"Create account":"Log in";
+  $("#fName").hidden=!s;$("#fName").required=s;$("#fBirthL").hidden=!s;$("#fBirth").required=s;$("#fPass").autocomplete=s?"new-password":"current-password";
+  $("#tLogin").setAttribute("aria-pressed",String(!s));$("#tSign").setAttribute("aria-pressed",String(s));devField();$("#authErr").textContent="";
+  if(!$("#auth").open)$("#auth").showModal()}
+function devField(){$("#fDev").hidden=!(mode==="signup"&&$("#fUser").value.trim().toLowerCase()==="weathercodevelopment")}
+async function logout(){try{await api("/logout",{method:"POST"})}catch{}token=null;me=null;localStorage.removeItem("wc_token");render();loadPosts()}
+function openDev(){const s=()=>{$("#devState").textContent=maint?"Scheduled maintenance is ON. Nobody but you can use the site.":"The site is live.";$("#devToggle").textContent=maint?"Turn maintenance off":"Turn maintenance on"};s();$("#devErr").textContent="";$("#dev").showModal()}
+$("#devToggle").onclick=async()=>{try{const r=await api("/maintenance",{body:{on:!maint}});maint=r.maintenance;render();$("#devState").textContent=maint?"Scheduled maintenance is ON. Nobody but you can use the site.":"The site is live.";$("#devToggle").textContent=maint?"Turn maintenance off":"Turn maintenance on"}catch(e){$("#devErr").textContent=e.message}};
+$("#tLogin").onclick=()=>openAuth("login");$("#tSign").onclick=()=>openAuth("signup");$("#authX").onclick=()=>$("#auth").close();$("#devLogin").onclick=()=>openAuth("login");$("#fUser").oninput=devField;
+$("#authForm").onsubmit=async e=>{e.preventDefault();$("#authErr").textContent="";const b={username:$("#fUser").value,password:$("#fPass").value};
+  if(mode==="signup"){b.displayName=$("#fName").value;b.birthdate=$("#fBirth").value;if(!$("#fDev").hidden)b.devCode=$("#fDev").value}
+  $("#authGo").disabled=true;
+  try{const r=await api(mode==="signup"?"/signup":"/login",{body:b});token=r.token;me=r.user;localStorage.setItem("wc_token",token);$("#auth").close();$("#authForm").reset();render();if(!maint||me.isDev){loadPosts();maint=(await api("/status")).maintenance;render()}}
+  catch(x){$("#authErr").textContent=x.message}finally{$("#authGo").disabled=false}};
+$("#zipForm").onsubmit=e=>{e.preventDefault();loadWeather()};
+(async()=>{
+  try{maint=(await api("/status")).maintenance}catch{}
+  if(token){try{me=(await api("/me")).user}catch{token=null;localStorage.removeItem("wc_token")}}
+  render();
+  if(!maint||(me&&me.isDev)){loadPosts();const z=localStorage.getItem("wc_zip");if(z){$("#zip").value=z;loadWeather()}}
+})();
+</script>
+</body>
+</html>

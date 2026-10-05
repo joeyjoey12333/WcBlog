@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-size="normal" data-motion="full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Co Blog</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231c5d88'/><circle cx='42' cy='22' r='11' fill='%23f5a623'/><circle cx='24' cy='42' r='9' fill='white'/><circle cx='36' cy='38' r='12' fill='white'/><circle cx='46' cy='44' r='8' fill='white'/><rect x='24' y='42' width='22' height='10' fill='white'/></svg>">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0f2940">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WC Blog">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
+<script>try{var d=document.documentElement,g=function(k){return localStorage.getItem(k)};d.dataset.theme=g("wc_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");d.dataset.size=g("wc_size")||"normal";d.dataset.motion=g("wc_motion")==="1"?"reduced":"full"}catch(e){}</script>
+<style>
+:root,[data-theme=light]{--bg:#f1f6fb;--card:#fff;--text:#14283c;--mute:#5b7085;--line:#dce6ef;--soft:#e9f1f8;--field:#f7fafd;--accent:#16798f;--on-accent:#fff;--bar:#0f2940;--bar2:#1c5d88;--shadow:0 1px 2px rgba(15,41,64,.06),0 10px 28px rgba(15,41,64,.07);color-scheme:light}
+[data-theme=blue]{--bg:#d6e9fb;--card:#f3f9ff;--text:#0a2948;--mute:#45688c;--line:#b2cfeb;--soft:#c4ddf7;--field:#fff;--accent:#0a62c4;--on-accent:#fff;--bar:#083a78;--bar2:#1a7ae0;--shadow:0 1px 2px rgba(10,60,120,.08),0 10px 28px rgba(10,80,160,.14);color-scheme:light}
+[data-theme=dark]{--bg:#09141f;--card:#0f2031;--text:#e7eff7;--mute:#94a9bc;--line:#223b53;--soft:#16304a;--field:#0a1a29;--accent:#4cc0d8;--on-accent:#06202a;--bar:#050d15;--bar2:#11384f;--shadow:0 10px 30px rgba(0,0,0,.4);color-scheme:dark}
+html{font-size:16px}html[data-size=small]{font-size:14px}html[data-size=large]{font-size:18px}
+html[data-motion=reduced] *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 1rem/1.55 Figtree,system-ui,sans-serif}
+h1,h2,h3,.brand,.temp{font-family:Fraunces,Georgia,serif}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--field);color:var(--text)}
+input[type=checkbox]{width:auto}
+:focus-visible{outline:3px solid var(--sun,#f5a623);outline-offset:2px}
+:root{--sun:#f5a623}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 24px;background:linear-gradient(90deg,var(--bar),var(--bar2));color:#fff;flex-wrap:wrap}
+.brand{font-size:26px;font-weight:700;color:#fff;text-decoration:none}.brand b{color:var(--sun)}
+nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:8px;font-weight:500}
+.btn{border:0;border-radius:99px;padding:9px 18px;font-weight:700;cursor:pointer;background:var(--sun);color:#10283f;transition:transform .12s,filter .12s}
+.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.btn.sm{padding:6px 14px;font-size:.88rem}
+.btn.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.7)}
+.btn.quiet{background:var(--soft);color:var(--text)}
+.btn.danger{background:#c0392b;color:#fff}
+.btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.bar{text-align:center;padding:9px 16px;font-weight:700}
+.announce{background:var(--sun);color:#10283f}
+.restrict{background:#fde7c2;color:#5b3b00}
+.hero{background:radial-gradient(circle at 88% 15%,rgba(245,166,35,.4),transparent 38%),linear-gradient(120deg,var(--bar),var(--bar2));color:#fff;padding:34px 24px 58px}
+.hero .in{max-width:1060px;margin:auto}
+.hero h1{font-size:clamp(28px,5vw,44px);line-height:1.1;margin:0 0 8px}
+.hero p{margin:0;opacity:.9;max-width:54ch}
+.wrap{max-width:1060px;margin:-28px auto 32px;padding:0 20px;display:grid;grid-template-columns:1fr 330px;gap:28px;align-items:start;position:relative}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}aside{order:-1}}
+aside{position:sticky;top:76px}@media(max-width:860px){aside{position:static}}
+.panel{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.weather{background:linear-gradient(160deg,var(--w1,#1d5f8a),var(--w2,#4aa0c0));color:#fff;border:0}
+.weather h2{margin:0 0 10px;font-size:22px}
+.weather form{display:flex;gap:8px}.weather input{flex:1;min-width:0;border:0;color:#10283f;background:#fff}
+.temp{font-size:72px;line-height:1;margin:12px 0 4px;font-weight:700}
+.wx small{opacity:.92;display:block}
+.outfit{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.4)}
+.outfit h3{margin:0 0 6px;font-size:18px}.outfit ul{margin:0;padding-left:20px}
+.err{color:#c0392b;font-weight:500;min-height:1.4em}.weather .err{color:#ffe1dd}
+.compose{display:grid;gap:10px;margin-bottom:18px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:99px;padding:5px 16px;cursor:pointer;font-weight:500}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.tools{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}.tools .chips{flex:none}.tools input{flex:1;min-width:140px}
+.post{margin-bottom:20px;overflow:hidden;padding:0;transition:transform .15s}
+.post:hover{transform:translateY(-2px)}
+.post img{width:100%;max-height:420px;object-fit:cover;display:block}
+.post img:not([src]){height:200px;background:var(--soft)}
+.post .in{padding:18px 22px}
+.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.post h2{margin:8px 0;font-size:28px;line-height:1.2}
+.post p{white-space:pre-wrap;margin:0 0 14px;max-width:68ch;overflow-wrap:anywhere}
+.tagbtn{border:0;background:var(--soft);color:var(--accent);font-weight:700;border-radius:99px;padding:2px 12px;cursor:pointer}
+.why{font-size:.85rem;color:var(--mute);font-style:italic}
+.badge{font-size:.8rem;font-weight:700;border-radius:6px;padding:1px 8px;background:var(--soft);color:var(--text)}
+.badge.t{background:var(--sun);color:#10283f}
+.foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.by{color:var(--mute);font-size:.9rem}.grow{flex:1;min-width:0}
+.userbtn{border:0;background:none;color:var(--text);font-weight:700;padding:0;cursor:pointer}
+.userbtn:hover{text-decoration:underline}
+.like{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:99px;padding:4px 14px;cursor:pointer;font-weight:700}
+.like.on{color:#d6336c;border-color:#d6336c}
+.acts{display:flex;gap:6px}
+.av{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:50%;color:#fff;font-weight:700;flex:none;background-size:cover}
+.av.lg{width:84px;height:84px;font-size:32px}
+.prof{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.prof h2{margin:0;font-size:26px}.counts{display:flex;gap:16px;margin-top:4px}
+.empty{color:var(--mute);text-align:center;padding:40px 10px}
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--text);padding:24px;width:min(420px,92vw);max-height:90vh;overflow:auto}
+dialog.wide{width:min(600px,94vw)}
+dialog::backdrop{background:rgba(5,13,21,.65)}
+.dform{display:grid;gap:12px}.dform h2{margin:0}.dform h3{margin:6px 0 2px;font-size:1.05rem}
+.dform section{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
+.tabs{display:flex;gap:8px}
+.check{display:flex;gap:8px;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:8px}
+.stat{background:var(--soft);border-radius:12px;padding:8px;text-align:center;font-size:.85rem}
+.stat b{display:block;font:700 24px Fraunces,Georgia,serif}
+.mlist{display:grid;gap:6px;max-height:220px;overflow:auto}
+.mrow{display:flex;gap:8px;align-items:center;background:var(--soft);border-radius:12px;padding:6px 10px}
+#toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:grid;gap:8px;z-index:30;pointer-events:none}
+.toast{background:var(--bar);color:#fff;padding:10px 18px;border-radius:99px;box-shadow:var(--shadow)}
+#maint{position:fixed;inset:0;z-index:40;background:linear-gradient(160deg,var(--bar),var(--bar2));color:#fff;display:grid;place-content:center;text-align:center;padding:24px}
+.mbox{display:grid;gap:12px;justify-items:center;max-width:520px}
+.mbox h1{font-size:clamp(30px,6vw,44px);margin:0}.mbox p{margin:0;opacity:.92}.until{font-weight:700;color:var(--sun)}
+[data-theme=weather]{--bg:var(--sky2,#bfe3f7);--card:rgba(255,255,255,.88);--text:#12283c;--mute:#4a6176;--line:rgba(18,40,60,.14);--soft:rgba(235,244,252,.85);--field:rgba(255,255,255,.96);--accent:#0f6f9a;--on-accent:#fff;--bar:#0f2940;--bar2:#2a6f9c;--shadow:0 10px 30px rgba(8,25,45,.25);color-scheme:light}
+[data-theme=weather] body{background:linear-gradient(180deg,var(--sky1,#3f9be0),var(--sky2,#bfe3f7)) fixed}
+[data-theme=weather] .panel{backdrop-filter:blur(8px)}
+#wxbg{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.nm.c-sunset,.nm.c-ocean,.nm.c-aurora,.nm.c-gold{-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:700}
+.c-sunset{background-image:linear-gradient(90deg,#ff7a18,#ff3d71)}.c-ocean{background-image:linear-gradient(90deg,#1d7fd6,#14b8a6)}
+.c-aurora{background-image:linear-gradient(90deg,#10b981,#8b5cf6,#0ea5e9)}.c-gold{background-image:linear-gradient(90deg,#d98e04,#f5c542)}
+.badge.boost{background:#ff6b6b;color:#fff}
+.price{font-weight:700;color:var(--accent)}
+.chatlist{display:grid;gap:8px;max-height:46vh;min-height:140px;overflow:auto;padding:4px;align-content:start}
+.bubble{max-width:82%;padding:8px 12px;border-radius:16px;overflow-wrap:anywhere;white-space:pre-wrap}
+.bubble.mine{justify-self:end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:4px}
+.bubble.theirs{justify-self:start;background:var(--soft);color:var(--text);border-bottom-left-radius:4px}
+.bubble small{display:block;opacity:.75;font-size:.75rem}
+.bubble .userbtn{color:inherit;font-size:.75rem;opacity:.85;text-decoration:underline}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff4d6d;flex:none}
+.vbox{display:grid;place-items:center;background:var(--soft);min-height:160px}.vbox video{width:100%;max-height:420px;background:#000;display:block}
+.post img.blurimg{height:220px;object-fit:cover;width:100%}
+#wBal{font:700 40px Fraunces,Georgia,serif;line-height:1.1}
+.badge.early{background:linear-gradient(90deg,#f5a623,#ffd36e);color:#3b2a00}
+.alertbar{background:#c0392b;color:#fff;cursor:pointer}
+.alert{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);border-left:5px solid #ffd36e;border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.alert small{display:block}.alert.sev-extreme{border-left-color:#ff5a5a}.alert.sev-severe{border-left-color:#ff9a3c}
+button.mrow{border:0;width:100%;text-align:left;cursor:pointer;color:var(--text);font:inherit}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="wxbg" aria-hidden="true" hidden></canvas>
+<header class="top"><a class="brand" href="/">☁ WC <b>Blog</b></a><nav id="nav"></nav></header>
+<div id="announce" class="bar announce" hidden></div>
+<div id="restrict" class="bar restrict" hidden>You have restricted mode on. You can not see 13+ posts</div>
+<div id="wxalert" class="bar alertbar" role="button" tabindex="0" hidden></div>
+<div id="pwbar" class="bar restrict" hidden>An admin gave you a temporary password. <button class="btn sm" id="pwbarGo">Change it now</button></div>
+<div id="banner" class="bar announce" hidden>Maintenance mode is on. Only you can use WC Blog right now.</div>
+<div id="maint" hidden><div class="mbox">
+  <div style="font-size:56px">🛠️</div><h1>WC Blog is down for maintenance</h1>
+  <p id="mMsg"></p><p id="mUntil" class="until" hidden></p>
+  <button class="btn ghost" id="devLogin">Developer log in</button>
+</div></div>
+<section class="hero"><div class="in"><h1>Weather, outfits &amp; stories from the sky</h1><p>Check today's forecast, see what to wear, and share what you're watching.</p></div></section>
+<main class="wrap">
+  <section>
+    <div id="composeBox"></div>
+    <div id="head"></div>
+    <div class="tools" id="tools"><input id="search" type="search" placeholder="Search these posts…" aria-label="Search posts"></div>
+    <div id="feed"><div class="empty">Loading posts…</div></div>
+  </section>
+  <aside>
+    <div class="panel weather" id="wcard">
+      <h2>Today's weather</h2>
+      <form id="zipForm"><input id="zip" inputmode="numeric" maxlength="5" placeholder="Zip code" aria-label="Zip code" autocomplete="postal-code"><button class="btn">Check</button></form>
+      <div class="err" id="zipErr" role="alert"></div>
+      <div class="wx" id="wx"></div>
+    </div>
+  </aside>
+</main>
+<div id="toasts" aria-live="polite"></div>
+
+<dialog id="auth"><form id="authForm" class="dform">
+  <div class="tabs"><button type="button" class="chip" id="tLogin">Log in</button><button type="button" class="chip" id="tSign">Sign up</button></div>
+  <h2 id="authTitle"></h2>
+  <input id="fUser" placeholder="Username" autocomplete="username" required>
+  <input id="fName" placeholder="Display name" maxlength="30">
+  <label id="fBirthL" class="by">Birthdate<input id="fBirth" type="date"></label>
+  <input id="fPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" required>
+  <input id="fDev" type="password" placeholder="Developer code" hidden>
+  <button type="button" class="btn quiet sm" id="devRecover" hidden>Forgot dev password? Enter your developer code and a NEW password above, then tap here</button>
+  <div class="err" id="authErr" role="alert"></div>
+  <button class="btn" id="authGo"></button>
+  <button type="button" class="btn quiet" id="authX">Cancel</button>
+</form></dialog>
+
+<dialog id="edit"><form id="editForm" class="dform">
+  <h2>Edit post</h2>
+  <input id="eTitle" maxlength="100" placeholder="Title" required>
+  <div class="row"><input id="eTopic" maxlength="30" placeholder="Topic" required><select id="eRate"></select></div>
+  <textarea id="eBody" rows="6" maxlength="5000" required></textarea>
+  <label class="check" id="eRemoveL"><input type="checkbox" id="eRemove"> Remove current image</label>
+  <label class="check" id="eRemoveVL"><input type="checkbox" id="eRemoveV"> Remove current video</label>
+  <label class="by">Replace image<input type="file" id="eFile" accept="image/*"></label>
+  <div class="err" id="eErr" role="alert"></div>
+  <button class="btn" id="eGo">Save changes</button>
+  <button type="button" class="btn quiet" onclick="this.closest('dialog').close()">Cancel</button>
+</form></dialog>
+
+<dialog id="confirm"><div class="dform">
+  <h2>Delete this post?</h2><p id="confirmText" class="by"></p>
+  <div class="err" id="confirmErr" role="alert"></div>
+  <button class="btn danger" id="confirmGo">Delete</button>
+  <button class="btn quiet" onclick="this.closest('dialog').close()">Keep it</button>
+</div></dialog>
+
+<dialog id="wallet" class="wide"><div class="dform">
+  <h2>🪙 Weather Credits</h2>
+  <div class="foot"><div class="grow"><div id="wBal"></div><div class="by" id="wStreak"></div></div><button class="btn" id="wCheck"></button></div>
+  <small class="by">Weather Credits are play money with no cash value. They can't be bought with real money or cashed out. Check in every day to build a streak: longer streaks pay more.</small>
+  <section><h3>Shop</h3><div class="mlist" id="wShop" style="max-height:280px"></div>
+    <small class="by">🚀 Boost one of your posts (150 🪙) with the Boost button on it. 🪙 Tip someone's post (5, 10 or 25) with the Tip button.</small></section>
+  <section><h3>Top streaks</h3><div class="mlist" id="wTop"></div></section>
+  <section><h3>History</h3><div class="mlist" id="wLog" style="max-height:180px"></div></section>
+  <div class="err" id="wErr" role="alert"></div>
+  <button class="btn quiet" onclick="this.closest('dialog').close()">Close</button>
+</div></dialog>
+
+<dialog id="sell"><form id="sellForm" class="dform">
+  <h2>Sell an image</h2>
+  <label class="by">Image<input type="file" id="slFile" accept="image/*" required></label>
+  <input id="slTitle" maxlength="60" placeholder="Title" required>
+  <input id="slDesc" maxlength="200" placeholder="Short description (optional)">
+  <input id="slPrice" type="number" min="1" max="5000" step="1" placeholder="Price in credits" required>
+  <label class="check"><input type="checkbox" id="slRights"> I made this image or have the right to sell it, and it is safe for all ages</label>
+  <small class="by">Only safe, all-ages images can be sold. Buyers see a blurred preview and unlock the full image when they buy. You keep 90% of every sale (95% with Premium).</small>
+  <div class="err" id="slErr" role="alert"></div>
+  <button class="btn" id="slGo">List it</button>
+  <button type="button" class="btn quiet" onclick="this.closest('dialog').close()">Cancel</button>
+</form></dialog>
+
+<dialog id="tip"><div class="dform"><h2>Send a tip</h2><p id="tipP" class="by"></p><div class="chips" id="tipChips"></div><div class="err" id="tipErr" role="alert"></div><button class="btn quiet" onclick="this.closest('dialog').close()">Cancel</button></div></dialog>
+
+<dialog id="ask"><div class="dform"><h2 id="askT"></h2><p id="askP" class="by"></p><div class="err" id="askErr" role="alert"></div><button class="btn" id="askGo"></button><button class="btn quiet" onclick="this.closest('dialog').close()">Cancel</button></div></dialog>
+
+<dialog id="msgs" class="wide"><div class="dform">
+  <h2>✉️ Messages</h2>
+  <div id="mBody" class="dform"></div>
+  <small class="by">Private messages are only between friends. Never share passwords or personal details. Reported messages can be reviewed by the site team.</small>
+  <button class="btn quiet" onclick="this.closest('dialog').close()">Close</button>
+</div></dialog>
+
+<dialog id="updates"><div class="dform"><h2 id="uTitle"></h2><small class="by" id="uDate"></small><ul id="uList" style="margin:0;padding-left:20px;display:grid;gap:6px"></ul><button class="btn" id="uGo">Got it</button></div></dialog>
+
+<dialog id="notifs"><div class="dform"><h2>Notifications</h2><div class="mlist" id="nList" style="max-height:60vh"></div><button class="btn quiet" onclick="this.closest('dialog').close()">Close</button></div></dialog>
+
+<dialog id="comments" class="wide"><div class="dform">
+  <h2 id="cTitle"></h2>
+  <div class="mlist" id="cList" style="max-height:50vh"></div>
+  <form id="cForm" class="foot"><input id="cText" maxlength="500" placeholder="Write a comment…" class="grow"><button class="btn sm">Send</button></form>
+  <button type="button" class="btn sm" id="cLogin" hidden>Log in to comment</button>
+  <div class="err" id="cErr" role="alert"></div>
+  <button class="btn quiet" onclick="this.closest('dialog').close()">Close</button>
+</div></dialog>
+
+<dialog id="report"><form id="rForm" class="dform">
+  <h2>Report</h2>
+  <select id="rReason"><option value="rating">Wrong age rating (should be 13+)</option><option value="harassment">Harassment or bullying</option><option value="inappropriate">Inappropriate content</option><option value="spam">Spam</option><option value="other">Something else</option></select>
+  <input id="rNote" maxlength="200" placeholder="Anything else we should know? (optional)">
+  <div class="err" id="rErr" role="alert"></div>
+  <button class="btn danger">Send report</button>
+  <button type="button" class="btn quiet" onclick="this.closest('dialog').close()">Cancel</button>
+</form></dialog>
+
+<dialog id="settings"><div class="dform">
+  <h2>Settings</h2>
+  <section><h3>Appearance</h3>
+    <div class="chips" id="sTheme" aria-label="Theme"></div>
+    <div class="chips" id="sSize" aria-label="Text size"></div>
+    <div class="chips" id="sUnits" aria-label="Units"></div>
+    <label class="check"><input type="checkbox" id="sMotion"> Reduce motion</label>
+    <label class="check"><input type="checkbox" id="sAlerts"> Show weather alert banner</label>
+    <small class="by" id="sWxNote" hidden>Weather Mode shows your local weather behind the page. Enter your zip code in the weather box to set it.</small>
+  </section>
+  <section><h3>Safety</h3>
+    <label class="check"><input type="checkbox" id="sRestrict"> Restricted mode</label>
+    <small class="by" id="sRNote"></small>
+    <label class="check" id="sFrL"><input type="checkbox" id="sFriendReq"> Let people send me friend requests</label>
+  </section>
+  <section id="sAcct"><h3>Profile</h3>
+    <div class="foot"><span id="sAvPrev"></span><label class="by grow">Profile picture<input type="file" id="sAvFile" accept="image/*"></label><button class="btn quiet sm" id="sAvRm">Remove</button></div>
+    <div class="foot"><input id="sName" maxlength="30" placeholder="Display name" class="grow"><button class="btn quiet sm" id="sNameGo">Save name</button></div>
+    <textarea id="sBio" rows="2" maxlength="160" placeholder="Bio (up to 160 characters)"></textarea>
+    <button class="btn quiet sm" id="sBioGo">Save bio</button>
+    <h3>Account</h3>
+    <input id="sPwCur" type="password" placeholder="Current password" autocomplete="current-password">
+    <div class="foot"><input id="sPwNew" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" class="grow"><button class="btn quiet sm" id="sPwGo">Change</button></div>
+    <button class="btn quiet" id="sLogoutAll">Sign out of all devices</button>
+  </section>
+  <section><h3>What's new</h3><button class="btn quiet" id="sWhats">See the latest update</button></section>
+  <section><h3>Install on your phone</h3><button class="btn quiet" id="sInstallGo" hidden>Install WC Blog</button><small class="by" id="sInstallNote"></small></section>
+  <section><h3>Data on this device</h3><button class="btn quiet" id="sZip">Forget saved zip code</button></section>
+  <div class="err" id="sErr" role="alert"></div>
+  <button class="btn" onclick="this.closest('dialog').close()">Done</button>
+</div></dialog>
+
+<dialog id="dev" class="wide"><div class="dform">
+  <h2>Dev panel</h2>
+  <section><h3>Site status</h3><p id="devState" style="margin:0"></p><button class="btn" id="devToggle"></button></section>
+  <section><h3>Maintenance screen &amp; announcement</h3>
+    <input id="dMsg" maxlength="200" placeholder="Maintenance message (optional)">
+    <input id="dUntil" maxlength="60" placeholder="Expected back (for example: Friday 5pm)">
+    <input id="dAnn" maxlength="200" placeholder="Site-wide announcement banner (leave empty for none)">
+    <button class="btn quiet" id="dSave">Save</button>
+  </section>
+  <section><h3>At a glance</h3><div class="stats" id="dStats"></div></section>
+  <section><h3>Marketplace &amp; credits</h3><p id="dMarketState" style="margin:0"></p><button class="btn quiet" id="dMarket"></button>
+    <div class="foot"><input id="dGiveU" placeholder="Username" class="grow"><input id="dGiveN" type="number" placeholder="± credits" style="width:120px"></div>
+    <input id="dGiveNote" maxlength="60" placeholder="Reason (shown in their history)"><button class="btn quiet" id="dGive">Give or take credits</button></section>
+  <section><h3>Messaging</h3><p id="dMsgState" style="margin:0"></p><button class="btn quiet" id="dMsgSw"></button>
+    <small class="by">Messages are only between friends, and minors can only friend minors close to their age. Reported messages appear under Reports with the conversation so you can review them.</small></section>
+  <section><h3>Videos &amp; Premium</h3><p id="dVideosState" style="margin:0"></p><button class="btn quiet" id="dVideos"></button>
+    <div class="foot"><input id="dPremU" placeholder="Username" class="grow"><input id="dPremDays" type="number" min="0" max="365" placeholder="Days (0 = remove)" style="width:150px"></div>
+    <button class="btn quiet" id="dPremGo">Give or remove Premium</button></section>
+  <section><h3>Update log pop-up</h3>
+    <input id="dUpT" maxlength="60" placeholder="Title, e.g. Weather Credits are here!">
+    <textarea id="dUpN" rows="4" maxlength="1500" placeholder="One bullet point per line (up to 12)"></textarea>
+    <div class="foot"><button class="btn quiet" id="dUpGo">Publish to everyone</button><button class="btn quiet" id="dUpClear">Clear</button></div></section>
+  <section><h3>Reports</h3><div class="mlist" id="dReports"></div></section>
+  <section><h3>Members</h3><p class="badge t" id="dTemp" hidden></p><div class="mlist" id="dUsers"></div><small class="by">To remove a post, use Delete (mod) on it in the feed.</small></section>
+  <div class="err" id="devErr" role="alert"></div>
+  <button class="btn quiet" onclick="this.closest('dialog').close()">Close</button>
+</div></dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const el=(t,a={},...c)=>{const n=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==="class")n.className=v;else if(k.startsWith("on"))n.addEventListener(k.slice(2),v);else n.setAttribute(k,v)}n.append(...c);return n};
+const LS={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
+const root=document.documentElement;
+let token=LS.get("wc_token"),me=null,maint=false,site={message:"",until:"",announcement:"",update:null},posts=[],tab="recommended",view={kind:"feed"},q="",mode="login",units=LS.get("wc_units")||"F",lastW=null,editing=null,deleting=null,unread=0,reports=0,cur=null,reporting=null,deferred=null,wallet={balance:0,streak:0,canCheckIn:false,freezes:0},listings=[],mk={tab:"browse"},askFn=null,marketOn=true,videosOn=true,tipping=null,announcedCI=false,friendsData=null,chatWith=null,chatLast="",chatTimer=0,chatData=null,chatEls=null,chatSeen=new Set(),dmCount=0,reqCount=0,msgOn=true;
+const imgs=new Map(),avC=new Map();let avPending=new Set(),avTimer=0;
+const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
+const isMe=u=>!!me&&me.username.toLowerCase()===String(u).toLowerCase();
+function applyTheme(t){if(t==="weather"&&!(me&&me.premium))t="light";root.dataset.theme=t;LS.set("wc_theme",t);if(t==="weather"){sizeBg();setScene(lastW?lastW.code:null)}else loopBg()}
+function applyLook(){root.dataset.size=LS.get("wc_size")||"normal";root.dataset.motion=LS.get("wc_motion")==="1"?"reduced":"full";loopBg()}
+function toast(m){const t=el("div",{class:"toast",role:"status"},m);$("#toasts").append(t);const x=setTimeout(()=>t.remove(),3200);if(x&&x.unref)x.unref()}
+const ago=ts=>{const s=(Date.now()-ts)/1e3;return s<60?"just now":s<3600?Math.floor(s/60)+"m ago":s<86400?Math.floor(s/3600)+"h ago":s<604800?Math.floor(s/86400)+"d ago":new Date(ts).toLocaleDateString()};
+async function api(p,o={}){
+  let r;
+  try{r=await fetch("/api"+p,{method:o.method||(o.body?"POST":"GET"),headers:{"content-type":"application/json",...(token?{authorization:"Bearer "+token}:{})},body:o.body?JSON.stringify(o.body):undefined})}
+  catch{throw new Error("Can't reach WC Blog. Check your connection and try again.")}
+  const d=await r.json().catch(()=>({}));
+  if(r.status===503&&d.maintenance){maint=true;site={...site,message:d.message||site.message,until:d.until||site.until};renderChrome()}
+  if(!r.ok)throw Object.assign(new Error(d.error||"Something went wrong. Try again."),{status:r.status});
+  return d}
+
+/* ---------- weather ---------- */
+const ICON=c=>c===0?"☀️":c<=2?"⛅":c===3?"☁️":c<=48?"🌫️":c<=67?"🌧️":c<=77?"❄️":c<=82?"🌦️":c<=86?"🌨️":"⛈️";
+const SKY=c=>c===0?["#e8902a","#f5c25c"]:c<=3?["#4f7fa3","#7fb0cf"]:c<=48?["#5d7486","#8fa3b2"]:(c<=67||(c>=80&&c<=82))?["#2f5d7c","#4c86a8"]:(c<=77||c===85||c===86)?["#6f97bb","#b9d3e8"]:["#35355e","#5a5d95"];
+function outfit(f,rain,wind,code){
+  const o=f<=20?["Heavy winter coat","Hat, gloves and a scarf","Insulated boots"]:f<=40?["Warm coat","Sweater or fleece","Long pants","Hat and gloves"]:f<=55?["Light jacket","Long sleeves","Jeans or long pants"]:f<=70?["T-shirt with a light layer","Pants or shorts"]:f<=85?["T-shirt","Shorts or a skirt","Sunglasses"]:["Light, breathable clothes","Shorts","Hat, sunscreen and water"];
+  const snow=(code>=71&&code<=77)||code===85||code===86;
+  if(snow)o.push("Waterproof boots");
+  else if(rain>=40||(code>=51&&code<=67)||(code>=80&&code<=82)||code>=95)o.push("Rain jacket or umbrella","Waterproof shoes");
+  if(wind>=20)o.push("Windbreaker");
+  return o}
+const deg=f=>(units==="C"?Math.round((f-32)*5/9):f)+"°";
+const spd=m=>units==="C"?Math.round(m*1.609)+" km/h":m+" mph";
+function renderWeather(w){
+  const[a,b]=SKY(w.code);$("#wcard").style.setProperty("--w1",a);$("#wcard").style.setProperty("--w2",b);
+  const al=(w.alerts||[]).map(x=>el("div",{class:"alert sev-"+String(x.severity).toLowerCase()},el("b",{},"⚠ "+x.event),el("small",{},(x.headline||"")+(x.ends?" · until "+new Date(x.ends).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}):""))));
+  $("#wx").replaceChildren(...al,...(w.alertsOk===false?[el("small",{},"Weather alerts are unavailable right now.")]:[]),el("div",{class:"temp"},ICON(w.code)+" "+deg(w.temp)),el("small",{},w.place),
+    el("small",{},`Feels like ${deg(w.feels)} · High ${deg(w.high)} · Low ${deg(w.low)}`),el("small",{},`Rain chance ${w.rain}% · Wind ${spd(w.wind)}`),
+    el("div",{class:"outfit"},el("h3",{},"What to wear today"),el("ul",{},...outfit(w.feels,w.rain,w.wind,w.code).map(x=>el("li",{},x)))));
+  const sev=(w.alerts||[]).find(x=>/severe|extreme/i.test(x.severity)),bar=$("#wxalert");
+  bar.hidden=!(sev&&LS.get("wc_alerts")!=="off");bar.textContent=sev?`⚠ ${sev.event} for ${w.place}. Tap for details.`:"";
+  setScene(w.code)}
+async function loadWeather(){
+  const zip=$("#zip").value.trim();$("#zipErr").textContent="";
+  if(!/^\d{5}$/.test(zip)){$("#zipErr").textContent="Enter a 5-digit US zip code.";return}
+  try{lastW=await api("/weather?zip="+zip);LS.set("wc_zip",zip);renderWeather(lastW)}catch(e){$("#zipErr").textContent=e.message}}
+
+/* ---------- avatars ---------- */
+function paintAv(s,k){const d=avC.get(k);s.style.background=d?`center/cover url("${d}")`:`hsl(${hue(k)} 50% 42%)`;s.textContent=d?"":k[0].toUpperCase()}
+function avatar(u,cls=""){const k=u.toLowerCase(),s=el("span",{class:"av "+cls,"data-u":k});paintAv(s,k);
+  if(!avC.has(k)){avPending.add(k);clearTimeout(avTimer);avTimer=setTimeout(fetchAv,30)}return s}
+function repaintAv(){document.querySelectorAll(".av").forEach(s=>{const k=s.dataset.u;if(k)paintAv(s,k)})}
+async function fetchAv(){
+  const names=[...avPending];avPending=new Set();
+  for(let i=0;i<names.length;i+=40){const chunk=names.slice(i,i+40);
+    try{const d=await api("/avatars?u="+chunk.join(","));for(const n of chunk)avC.set(n,d.avatars[n]||null)}catch{for(const n of chunk)avC.set(n,null)}}
+  repaintAv()}
+function square(file){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>{const s=Math.min(i.width,i.height),c=el("canvas");c.width=c.height=96;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,96,96);x.drawImage(i,(i.width-s)/2,(i.height-s)/2,s,s,0,0,96,96);URL.revokeObjectURL(i.src);ok(c.toDataURL("image/jpeg",.85))};i.onerror=()=>no(new Error("That file isn't a readable image."));i.src=URL.createObjectURL(file)})}
+function shrink(f){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>{const s=Math.min(1,900/Math.max(i.width,i.height)),c=el("canvas");c.width=Math.round(i.width*s);c.height=Math.round(i.height*s);const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(i,0,0,c.width,c.height);URL.revokeObjectURL(i.src);let o=c.toDataURL("image/jpeg",.8);if(o.length>850000)o=c.toDataURL("image/jpeg",.5);ok(o)};i.onerror=()=>no(new Error("That file isn't a readable image."));i.src=URL.createObjectURL(f)})}
+
+/* ---------- feed ---------- */
+function postImg(p){const i=el("img",{alt:""});if(imgs.has(p.id))i.src=imgs.get(p.id);else api("/image/"+p.id).then(r=>{imgs.set(p.id,r.image);i.src=r.image}).catch(()=>i.remove());return i}
+function paintLike(p,b){b.className="like"+(p.liked?" on":"");b.setAttribute("aria-pressed",String(!!p.liked));b.textContent=`${p.liked?"♥":"♡"} ${p.likes}`}
+async function toggleLike(p,b){
+  if(!me){openAuth("login");return}
+  const want=!p.liked;p.liked=want;p.likes+=want?1:-1;paintLike(p,b);
+  try{const r=await api(`/posts/${p.id}/like`,{body:{like:want}});p.liked=r.liked;p.likes=r.likes;paintLike(p,b);if(want)toast("Liked. You'll see more posts like this.")}
+  catch(e){p.liked=!want;p.likes+=want?-1:1;paintLike(p,b);toast(e.message)}}
+function videoBox(p){
+  const box=el("div",{class:"vbox"}),btn=el("button",{class:"btn",onclick:async()=>{btn.disabled=true;btn.textContent="Loading…";
+    try{const r=await fetch("/api/video/"+p.id,{headers:token?{authorization:"Bearer "+token}:{}});if(!r.ok)throw new Error("Couldn't load this video.");
+      box.replaceChildren(el("video",{controls:"",playsinline:"",preload:"metadata",src:URL.createObjectURL(await r.blob())}))}
+    catch(e){btn.disabled=false;btn.textContent="▶ Play video";toast(e.message)}}},"▶ Play video");
+  box.append(btn);return box}
+const earlyBadge=()=>el("span",{class:"badge early",title:"Joined before October 3, 2026"},"✦ Early Access");
+function postCard(p){
+  const mine=isMe(p.username),dev=me&&me.isDev,lk=el("button",{class:"like"});paintLike(p,lk);lk.addEventListener("click",()=>toggleLike(p,lk));
+  const acts=[...(mine?[el("button",{class:"btn quiet sm",onclick:()=>openEdit(p)},"Edit"),...(p.boosted?[]:[el("button",{class:"btn quiet sm",onclick:()=>boostPost(p)},"🚀 Boost")])]:[]),...(me&&!mine?[el("button",{class:"btn quiet sm",onclick:()=>openTip(p)},"🪙 Tip")]:[]),...(me&&!mine?[el("button",{class:"btn quiet sm",onclick:()=>openReport({type:"post",postId:p.id})},"Report")]:[]),...(mine||dev?[el("button",{class:"btn quiet sm",onclick:()=>askDelete(p)},mine?"Delete":"Delete (mod)")]:[])];
+  return el("article",{class:"panel post"},...(p.hasImage?[postImg(p)]:[]),...(p.hasVideo?[videoBox(p)]:[]),
+    el("div",{class:"in"},
+      el("div",{class:"meta"},el("button",{class:"tagbtn",onclick:()=>openTag(p.topic)},"#"+p.topic),el("span",{class:"badge"+(p.rating==="13+"?" t":"")},p.rating==="13+"?"13+":"All ages"),...(p.boosted?[el("span",{class:"badge boost"},"🚀 Boosted")]:[]),...(p.reason?[el("span",{class:"why"},p.reason)]:[])),
+      el("h2",{},p.title),el("p",{},p.body),
+      el("div",{class:"foot"},avatar(p.username),
+        el("div",{class:"by grow"},el("button",{class:"userbtn",onclick:()=>openProfile(p.username)},nameEl(p.displayName,p.color,p.flair,p.premium)),` @${p.username} · ${ago(p.createdAt)}${p.editedAt?" · edited":""} `,...(p.early?[earlyBadge()," "]:[]),...(p.username.toLowerCase()==="weathercodevelopment"?[el("span",{class:"badge t"},"Dev")]:[])),
+        lk,el("button",{class:"like",onclick:()=>openComments(p.id)},"💬 "+(p.comments||0)),el("div",{class:"acts"},...acts))))}
+function renderFeed(){
+  const list=posts.filter(p=>!q||(p.title+" "+p.body+" "+p.topic+" "+p.displayName+" "+p.username).toLowerCase().includes(q));
+  const empty=posts.length?"No posts match your search.":view.kind==="tag"?"No posts under this tag yet.":view.kind==="profile"?"No posts yet.":tab==="following"?(me?"No posts from people you follow yet. Open someone's profile and tap Follow.":"Log in to see posts from people you follow."):"No posts yet. Be the first to share something.";
+  $("#feed").replaceChildren(...(list.length?list.map(postCard):[el("div",{class:"empty"},empty)]))}
+function friendBtn(p){
+  const f=p.friend||"none";
+  if(f==="friends")return el("button",{class:"btn quiet sm",onclick:async()=>{await openMessages();openChat(p.username)}},"✉️ Message");
+  const go=async(path,body,msg)=>{if(!me){openAuth("login");return}try{const r=await api(path,{body});p.friend=r.status;renderHead();toast(msg(r))}catch(e){toast(e.message)}};
+  if(f==="sent")return el("button",{class:"btn quiet sm",onclick:()=>go("/friends/cancel",{username:p.username},()=>"Request cancelled")},"Request sent · Cancel");
+  if(f==="received")return el("button",{class:"btn sm",onclick:()=>go("/friends/respond",{username:p.username,accept:true},()=>"You're friends now!")},"Accept friend request");
+  return el("button",{class:"btn quiet sm",onclick:()=>go("/friends/request",{username:p.username},r=>r.status==="friends"?"You're friends now!":"Friend request sent")},"Add friend")}
+function renderHead(){
+  const h=$("#head");$("#composeBox").hidden=view.kind==="market";$("#tools").hidden=view.kind==="market";
+  if(view.kind==="market"){h.replaceChildren(el("div",{class:"panel prof"},el("h2",{},"🖼️ Image market"),
+    el("div",{class:"chips grow"},...[["browse","Browse"],["popular","Popular"],["mine","My listings"],["owned","My purchases"]].map(([v,l])=>el("button",{class:"chip","aria-pressed":String(mk.tab===v),onclick:()=>{mk.tab=v;renderHead();loadMarket()}},l))),
+    el("button",{class:"btn sm",onclick:openSell},"Sell an image"),el("button",{class:"btn quiet sm",onclick:goFeed},"← Back")));return}
+  if(view.kind==="feed"){h.replaceChildren(el("div",{class:"chips",style:"margin-bottom:12px"},...[["recommended","Recommended"],["following","Following"],["all","All"]].map(([v,l])=>el("button",{class:"chip","aria-pressed":String(tab===v),onclick:()=>{tab=v;renderHead();loadPosts()}},l))));return}
+  if(view.kind==="tag"){h.replaceChildren(el("div",{class:"panel prof"},el("button",{class:"btn quiet sm",onclick:goFeed},"← Back"),el("h2",{},"#"+view.tag)));return}
+  const p=view.profile;
+  h.replaceChildren(el("div",{class:"panel prof"},avatar(p.username,"lg"),
+    el("div",{class:"grow"},el("h2",{},nameEl(p.displayName,p.color,p.flair,p.premium)),el("div",{class:"by"},"@"+p.username+(p.isDev?" · Dev":"")+" ",...(p.early?[earlyBadge()]:[])),...(p.streak?[el("div",{class:"by"},"🔥 "+p.streak+"-day streak")]:[]),
+      ...(p.bio?[el("p",{style:"margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere"},p.bio)]:[]),
+      el("div",{class:"counts"},el("span",{},el("b",{},String(p.followers))," followers"),el("span",{},el("b",{},String(p.following))," following"))),
+    ...(isMe(p.username)?[el("button",{class:"btn quiet sm",onclick:openSettings},"Edit profile")]:[el("button",{class:"btn sm",onclick:toggleFollow},p.isFollowing?"Unfollow":"Follow"),friendBtn(p)]),
+    el("button",{class:"btn quiet sm",onclick:goFeed},"← Back")))}
+async function loadPosts(){
+  if(view.kind==="market")return loadMarket();
+  const qs=new URLSearchParams();
+  if(view.kind==="tag")qs.set("tag",view.tag);else if(view.kind==="profile")qs.set("user",view.username);else qs.set("tab",tab);
+  try{posts=(await api("/posts?"+qs.toString())).posts;renderFeed()}catch(e){$("#feed").replaceChildren(el("div",{class:"empty"},e.message))}}
+function goFeed(){view={kind:"feed"};renderHead();loadPosts()}
+function openTag(t){view={kind:"tag",tag:t};renderHead();loadPosts();window.scrollTo({top:0,behavior:"smooth"})}
+async function openProfile(u){
+  try{const p=await api("/profile/"+encodeURIComponent(u));view={kind:"profile",username:p.username.toLowerCase(),profile:p};renderHead();await loadPosts();window.scrollTo({top:0,behavior:"smooth"})}
+  catch(e){toast(e.message)}}
+async function toggleFollow(){
+  if(!me){openAuth("login");return}
+  const p=view.profile;
+  try{const r=await api("/follow",{body:{username:p.username,follow:!p.isFollowing}});p.isFollowing=r.following;p.followers=r.followers;renderHead();toast(r.following?`You're following ${p.displayName}`:`Unfollowed ${p.displayName}`)}
+  catch(e){toast(e.message)}}
+
+/* ---------- compose / edit / delete ---------- */
+const readFile=f=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(new Error("Couldn't read that file."));r.readAsDataURL(f)});
+function renderCompose(){
+  const box=$("#composeBox");
+  if(!me){box.replaceChildren(el("div",{class:"panel compose"},el("strong",{},"Join the conversation"),el("span",{class:"by"},"Sign up or log in to post, like and follow."),el("div",{},el("button",{class:"btn",onclick:()=>openAuth("signup")},"Sign up"))));return}
+  const title=el("input",{placeholder:"Post title",maxlength:100,required:""}),tp=el("input",{placeholder:"Topic (e.g. storms, gardening)",maxlength:30,required:""}),
+    rate=el("select",{},el("option",{value:"all"},"Rated for all ages"),...(me.restricted?[]:[el("option",{value:"13+"},"Rated 13+")])),
+    body=el("textarea",{rows:4,placeholder:"What's on your mind?",maxlength:5000,required:""}),cnt=el("small",{class:"by"},"0 / 5000"),
+    file=el("input",{type:"file",accept:"image/*"}),vfile=el("input",{type:"file",accept:"video/mp4,video/webm,video/quicktime"}),vnote=el("small",{class:"by"},me.premium?"🎬 Premium video: MP4, WebM or MOV, up to 3.5 MB (about 10 to 20 seconds). A post has an image or a video.":"🎬 Video posts are for WC Blog Premium members. Get Premium in your 🪙 wallet."),err=el("div",{class:"err",role:"alert"}),go=el("button",{class:"btn"},"Publish");
+  body.addEventListener("input",()=>{cnt.textContent=body.value.length+" / 5000"});
+  const f=el("form",{class:"panel compose",onsubmit:async e=>{e.preventDefault();err.textContent="";go.disabled=true;
+    try{const vf=me.premium?vfile.files[0]:null;if(vf&&vf.size>3.5*1024*1024)throw new Error("That video is over 3.5 MB. Try a shorter clip.");
+      const video=vf?await readFile(vf):null,image=!video&&file.files[0]?await shrink(file.files[0]):null;await api("/posts",{body:{title:title.value,topic:tp.value,body:body.value,rating:rate.value,image,...(video?{video}:{})}});
+      f.reset();cnt.textContent="0 / 5000";toast("Post published");view={kind:"feed"};tab="all";renderHead();await loadPosts()}
+    catch(x){err.textContent=x.message}finally{go.disabled=false}}},title,el("div",{class:"row"},tp,rate),body,cnt,file,vnote,...(me.premium?[vfile]:[]),err,el("div",{},go));
+  box.replaceChildren(f)}
+function openEdit(p){
+  editing=p;$("#eTitle").value=p.title;$("#eTopic").value=p.topic;$("#eBody").value=p.body;
+  $("#eRate").replaceChildren(el("option",{value:"all"},"Rated for all ages"),...(me.restricted?[]:[el("option",{value:"13+"},"Rated 13+")]));$("#eRate").value=p.rating;
+  $("#eRemoveL").hidden=!p.hasImage;$("#eRemove").checked=false;$("#eRemoveVL").hidden=!p.hasVideo;$("#eRemoveV").checked=false;$("#eFile").value="";$("#eErr").textContent="";$("#edit").showModal()}
+$("#editForm").onsubmit=async e=>{
+  e.preventDefault();$("#eErr").textContent="";$("#eGo").disabled=true;
+  const b={title:$("#eTitle").value,topic:$("#eTopic").value,body:$("#eBody").value,rating:$("#eRate").value};
+  try{const f=$("#eFile").files[0];if(f)b.image=await shrink(f);else if($("#eRemove").checked)b.removeImage=true;if($("#eRemoveV").checked)b.removeVideo=true;
+    await api(`/posts/${editing.id}/edit`,{body:b});imgs.delete(editing.id);$("#edit").close();toast("Post updated");await loadPosts()}
+  catch(x){$("#eErr").textContent=x.message}finally{$("#eGo").disabled=false}};
+function askDelete(p){deleting=p;$("#confirmText").textContent=`"${p.title}" will be removed for good.`;$("#confirmErr").textContent="";$("#confirm").showModal()}
+$("#confirmGo").onclick=async()=>{
+  try{await api(`/posts/${deleting.id}/delete`,{body:{}});imgs.delete(deleting.id);$("#confirm").close();toast("Post deleted");await loadPosts()}
+  catch(e){$("#confirmErr").textContent=e.message}};
+
+/* ---------- page chrome ---------- */
+function renderChrome(){
+  const dev=!!me&&me.isDev;
+  $("#maint").hidden=!(maint&&!dev);
+  $("#mMsg").textContent=site.message||"We're making improvements and will be back soon.";
+  $("#mUntil").textContent=site.until?"Expected back: "+site.until:"";$("#mUntil").hidden=!site.until;
+  $("#banner").hidden=!(maint&&dev);
+  $("#announce").textContent=site.announcement||"";$("#announce").hidden=!site.announcement||(maint&&!dev);
+  $("#restrict").hidden=!(me&&me.restricted);
+  $("#pwbar").hidden=!(me&&me.mustChange);
+  $("#nav").replaceChildren(el("button",{class:"btn ghost sm",onclick:()=>openMarket()},"Market"),...(me?[el("span",{class:"who"},avatar(me.username),nameEl(me.displayName,me.color,me.flair,me.premium),...(me.early?[earlyBadge()]:[])),
+      el("button",{class:"btn ghost sm","aria-label":"Weather Credits",onclick:openWallet},"🪙 "+wallet.balance+(wallet.streak?" · 🔥"+wallet.streak:"")+(wallet.canCheckIn?" ●":"")),
+      el("button",{class:"btn ghost sm","aria-label":"Messages",onclick:()=>openMessages()},"✉️"+(dmCount+reqCount?" "+Math.min(99,dmCount+reqCount):"")),
+      el("button",{class:"btn ghost sm","aria-label":"Notifications",onclick:openNotifs},"🔔"+(unread?" "+(unread>=99?"99+":unread):"")),
+      ...(dev?[el("button",{class:"btn sm",onclick:openDev},"Dev panel"+(reports?` (${reports})`:""))]:[]),
+      el("button",{class:"btn ghost sm",onclick:openSettings},"Settings"),el("button",{class:"btn ghost sm",onclick:logout},"Log out")]
+    :[el("button",{class:"btn ghost sm",onclick:openSettings},"Settings"),el("button",{class:"btn ghost sm",onclick:()=>openAuth("login")},"Log in"),el("button",{class:"btn sm",onclick:()=>openAuth("signup")},"Sign up")]))}
+function render(){renderChrome();renderCompose()}
+async function logout(){try{await api("/logout",{method:"POST"})}catch{}token=null;me=null;unread=0;reports=0;LS.del("wc_token");view={kind:"feed"};render();renderHead();loadPosts()}
+
+/* ---------- settings ---------- */
+const chipRow=(id,opts,cur,fn)=>$(id).replaceChildren(...opts.map(([v,l])=>el("button",{class:"chip","aria-pressed":String(cur===v),onclick:()=>fn(v)},l)));
+function openSettings(){
+  chipRow("#sTheme",[["light","Light"],["blue","Blue"],["dark","Dark"],["weather",me&&me.premium?"Weather Mode ⭐":"Weather Mode 🔒"]],root.dataset.theme,setTheme);
+  chipRow("#sSize",[["small","Small text"],["normal","Normal text"],["large","Large text"]],root.dataset.size,v=>{LS.set("wc_size",v);applyLook();openSettings()});
+  chipRow("#sUnits",[["F","°F · mph"],["C","°C · km/h"]],units,v=>{units=v;LS.set("wc_units",v);openSettings();if(lastW)renderWeather(lastW)});
+  $("#sMotion").checked=root.dataset.motion==="reduced";$("#sAlerts").checked=LS.get("wc_alerts")!=="off";
+  $("#sWxNote").hidden=!(root.dataset.theme==="weather"&&!lastW);
+  const r=$("#sRestrict");r.checked=!!me&&me.restricted;r.disabled=!me||me.forced;
+  $("#sRNote").textContent=!me?"Log in to change restricted mode. Visitors who aren't logged in always have it on.":me.forced?"Restricted mode stays on until you turn 13.":"When on, you won't see 13+ posts.";
+  $("#sAcct").hidden=!me;$("#sFrL").hidden=!me;$("#sFriendReq").checked=!me||me.friendRequests!==false;
+  if(me){$("#sName").value=me.displayName;$("#sBio").value=me.bio||"";$("#sAvPrev").replaceChildren(avatar(me.username,"lg"))}
+  installNote();
+  $("#sErr").textContent="";if(!$("#settings").open)$("#settings").showModal()}
+function setTheme(v){if(v==="weather"&&!(me&&me.premium)){toast("Weather Mode is a WC Blog Premium perk. Get Premium in your 🪙 wallet.");return}applyTheme(v);openSettings();if(me)api("/settings",{body:{theme:v}}).catch(()=>{})}
+$("#sMotion").onchange=e=>{LS.set("wc_motion",e.target.checked?"1":"0");applyLook()};
+$("#sRestrict").onchange=async e=>{const want=e.target.checked;
+  try{const r=await api("/settings",{body:{restricted:want}});me=r.user;toast(want?"Restricted mode is on":"Restricted mode is off");render();loadPosts()}
+  catch(x){e.target.checked=!want;$("#sErr").textContent=x.message}};
+$("#sNameGo").onclick=async()=>{try{const r=await api("/settings",{body:{displayName:$("#sName").value}});me=r.user;render();toast("Display name updated");loadPosts()}catch(x){$("#sErr").textContent=x.message}};
+$("#sAvFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;
+  try{const img=await square(f);await api("/avatar",{body:{image:img}});avC.set(me.username.toLowerCase(),img);e.target.value="";repaintAv();toast("Profile picture updated");openSettings()}
+  catch(x){$("#sErr").textContent=x.message}};
+$("#sAvRm").onclick=async()=>{try{await api("/avatar",{body:{image:null}});avC.set(me.username.toLowerCase(),null);repaintAv();toast("Profile picture removed");openSettings()}catch(x){$("#sErr").textContent=x.message}};
+$("#sPwGo").onclick=async()=>{try{const r=await api("/account/password",{body:{current:$("#sPwCur").value,next:$("#sPwNew").value}});token=r.token;LS.set("wc_token",token);$("#sPwCur").value="";$("#sPwNew").value="";$("#sErr").textContent="";toast("Password changed. Other devices were signed out.")}catch(x){$("#sErr").textContent=x.message}};
+$("#sLogoutAll").onclick=async()=>{try{await api("/account/logout-all",{body:{}});$("#settings").close();await logout();toast("Signed out of all devices")}catch(x){$("#sErr").textContent=x.message}};
+$("#sZip").onclick=()=>{LS.del("wc_zip");$("#zip").value="";$("#wx").replaceChildren();$("#wxalert").hidden=true;lastW=null;setScene(null);toast("Saved zip code cleared")};
+
+/* ---------- dev panel ---------- */
+const RLAB={rating:"Wrong age rating",harassment:"Harassment or bullying",inappropriate:"Inappropriate content",spam:"Spam",other:"Something else"};
+const devState=()=>{$("#devState").textContent=maint?"Maintenance is ON. Only you can use the site.":"The site is live.";$("#devToggle").textContent=maint?"Turn maintenance off":"Turn maintenance on"};
+async function loadOverview(){
+  try{const d=await api("/admin/overview"),c=d.counts;
+    $("#dStats").replaceChildren(...[["Members",c.users],["Posts",c.posts],["Comments",c.comments],["13+ posts",c.posts13],["Likes",c.likes],["Premium",c.premium],["Credits",c.credits],["Listings",c.listings],["Sales",c.sales],["Open reports",c.reports],["Under 13",c.under13],["Suspended",c.suspended]].map(([l,n])=>el("div",{class:"stat"},el("b",{},String(n)),l)));
+    $("#dUsers").replaceChildren(...d.users.map(u=>el("div",{class:"mrow"},avatar(u.username),
+      el("span",{class:"grow"},`${u.displayName} (@${u.username}) `,...(u.early?[earlyBadge()," "]:[]),...(u.premium?[el("span",{class:"badge early"},"⭐ Premium")," "]:[]),...(u.under13?[el("span",{class:"badge"},"Under 13")]:[]),...(u.suspended?[el("span",{class:"badge t"},"Suspended")]:[])),
+      ...(u.username.toLowerCase()==="weathercodevelopment"?[]:[el("button",{class:"btn quiet sm",onclick:()=>resetPw(u)},"Reset password"),el("button",{class:"btn quiet sm",onclick:()=>suspend(u)},u.suspended?"Restore":"Suspend")]))))}
+  catch(e){$("#devErr").textContent=e.message}}
+async function loadReports(){
+  try{const d=await api("/admin/reports");reports=d.reports.length;renderChrome();
+    $("#dReports").replaceChildren(...(d.reports.length?d.reports.map(r=>el("div",{class:"mrow",style:"align-items:flex-start;flex-wrap:wrap"},
+      el("div",{class:"grow"},el("b",{},(r.type==="post"?"Post":r.type==="comment"?"Comment":r.type==="message"?"Private message":"Listing")+" by @"+r.author),el("div",{class:"by"},`"${r.type==="comment"||r.type==="message"?r.text:r.title}" · reported by @${r.by} · ${RLAB[r.reason]||r.reason}${r.note?" · "+r.note:""}`),...(r.type==="message"&&r.context?[el("div",{class:"by",style:"white-space:pre-wrap"},"Conversation:\n"+r.context.map(c=>`@${c.from}: ${c.text}`).join("\n"))]:[])),
+      el("div",{class:"acts"},...(r.type==="message"?[el("button",{class:"btn quiet sm",onclick:()=>suspend({username:r.author,suspended:false})},"Suspend sender")]:[]),el("button",{class:"btn quiet sm",onclick:()=>resolveReport(r,true)},r.type==="listing"?"Remove & refund":"Delete it"),el("button",{class:"btn quiet sm",onclick:()=>resolveReport(r,false)},"Dismiss")))):[el("div",{class:"by"},"No open reports.")]))}
+  catch(e){$("#devErr").textContent=e.message}}
+async function resolveReport(r,del){
+  try{if(del){try{await api(r.type==="post"?`/posts/${r.postId}/delete`:r.type==="listing"?`/market/${r.postId}/takedown`:r.type==="message"?"/admin/dm-delete":`/comments/${r.postId}/${r.cid}/delete`,{body:r.type==="listing"?{remove:true,refund:true}:r.type==="message"?{conv:r.postId,id:r.cid}:{}})}catch(e){if(e.status!==404)throw e}}
+    await api("/admin/reports/dismiss",{body:{key:r.key}});toast(del?"Removed and closed":"Report dismissed");loadReports();loadOverview();if(del)loadPosts()}
+  catch(e){$("#devErr").textContent=e.message}}
+async function suspend(u){try{await api("/admin/suspend",{body:{username:u.username,suspended:!u.suspended}});toast(u.suspended?`Restored @${u.username}`:`Suspended @${u.username}`);loadOverview()}catch(e){$("#devErr").textContent=e.message}}
+async function resetPw(u){try{const d=await api("/admin/reset-password",{body:{username:u.username}});$("#dTemp").textContent=`Temporary password for @${u.username}: ${d.tempPassword} (shown once). Tell them to log in and change it in Settings.`;$("#dTemp").hidden=false}catch(e){$("#devErr").textContent=e.message}}
+function openDev(){devState();devMsgState();devMarket();devVideos();$("#dMsg").value=site.message;$("#dUntil").value=site.until;$("#dAnn").value=site.announcement;$("#devErr").textContent="";$("#dTemp").hidden=true;$("#dev").showModal();loadOverview();loadReports()}
+$("#devToggle").onclick=async()=>{try{const r=await api("/maintenance",{body:{on:!maint}});maint=r.maintenance;renderChrome();devState();toast(maint?"Maintenance is on":"Site is live")}catch(e){$("#devErr").textContent=e.message}};
+$("#dSave").onclick=async()=>{try{const r=await api("/admin/site",{body:{message:$("#dMsg").value,until:$("#dUntil").value,announcement:$("#dAnn").value}});site=r;renderChrome();toast("Saved")}catch(e){$("#devErr").textContent=e.message}};
+
+/* ---------- sign up / log in ---------- */
+function devField(){const isDev=$("#fUser").value.trim().toLowerCase()==="weathercodevelopment";$("#fDev").hidden=!isDev;$("#fDev").placeholder=mode==="signup"?"Developer code":"Developer code (only for password recovery)";$("#devRecover").hidden=!(isDev&&mode==="login")}
+function openAuth(m){mode=m;const s=m==="signup";$("#authTitle").textContent=s?"Create your account":"Welcome back";$("#authGo").textContent=s?"Create account":"Log in";
+  $("#fName").hidden=!s;$("#fName").required=s;$("#fBirthL").hidden=!s;$("#fBirth").required=s;$("#fPass").autocomplete=s?"new-password":"current-password";
+  $("#tLogin").setAttribute("aria-pressed",String(!s));$("#tSign").setAttribute("aria-pressed",String(s));devField();$("#authErr").textContent="";
+  if(!$("#auth").open)$("#auth").showModal()}
+$("#tLogin").onclick=()=>openAuth("login");$("#tSign").onclick=()=>openAuth("signup");$("#authX").onclick=()=>$("#auth").close();$("#devLogin").onclick=()=>openAuth("login");$("#fUser").oninput=devField;
+$("#authForm").onsubmit=async e=>{
+  e.preventDefault();$("#authErr").textContent="";
+  const b={username:$("#fUser").value,password:$("#fPass").value};
+  if(mode==="signup"){b.displayName=$("#fName").value;b.birthdate=$("#fBirth").value;if(!$("#fDev").hidden)b.devCode=$("#fDev").value}
+  $("#authGo").disabled=true;
+  try{const r=await api(mode==="signup"?"/signup":"/login",{body:b});token=r.token;me=r.user;LS.set("wc_token",token);if(me.theme)applyTheme(me.theme);
+    $("#auth").close();$("#authForm").reset();await refreshStatus(true);render();if(!maint||me.isDev){renderHead();loadPosts();pollNotifs()}}
+  catch(x){$("#authErr").textContent=x.message}finally{$("#authGo").disabled=false}};
+$("#zipForm").onsubmit=e=>{e.preventDefault();loadWeather()};
+$("#search").oninput=e=>{q=e.target.value.trim().toLowerCase();renderFeed()};
+
+/* ---------- Weather Mode background ---------- */
+const bg=$("#wxbg");let scene=null,bgRaf=0,flash=0;
+const SKYS={clear:[["#3f9be0","#bfe3f7"],["#0a1830","#1d3557"]],cloudy:[["#7894ab","#c3d1dc"],["#1a2634","#3a4a5c"]],fog:[["#9aa8b3","#cfd6dc"],["#26313a","#495560"]],rain:[["#4a6176","#8da2b3"],["#131e2a","#2b3b4b"]],snow:[["#8aa6bd","#e3edf5"],["#1e2c3c","#546a80"]],storm:[["#2e3949","#5a6677"],["#0f141c","#293240"]]};
+const kindOf=c=>c==null||c===0?"clear":c<=3?"cloudy":c<=48?"fog":(c<=67||(c>=80&&c<=82))?"rain":(c<=77||c===85||c===86)?"snow":"storm";
+function sizeBg(){const d=Math.min(2,window.devicePixelRatio||1);bg.width=(window.innerWidth||1024)*d;bg.height=(window.innerHeight||768)*d;bg.getContext("2d").setTransform(d,0,0,d,0,0)}
+function seedBg(){
+  if(!scene)return;const W=window.innerWidth||1024,H=window.innerHeight||768,s=scene,k=s.kind;s.W=W;s.H=H;
+  const nc=k==="clear"?(s.night?0:3):k==="fog"?0:k==="cloudy"?8:6;
+  s.clouds=Array.from({length:nc},()=>({x:Math.random()*W,y:H*(.05+Math.random()*(k==="cloudy"?.4:.22)),w:W*(.22+Math.random()*.25),v:.15+Math.random()*.25}));
+  const nd=k==="rain"?Math.min(220,W/6):k==="storm"?Math.min(320,W/4):k==="snow"?Math.min(160,W/9):0;
+  s.drops=Array.from({length:Math.floor(nd)},()=>({x:Math.random()*W,y:Math.random()*H,v:k==="snow"?.6+Math.random()*1.2:9+Math.random()*7,r:k==="snow"?1.2+Math.random()*2.6:8+Math.random()*10,p:Math.random()*6}));
+  s.stars=s.night&&(k==="clear"||k==="cloudy")?Array.from({length:70},()=>({x:Math.random()*W,y:Math.random()*H*.6,r:Math.random()*1.4+.3,p:Math.random()*6})):[]}
+function cloud(c,x,y,w,col){c.fillStyle=col;c.beginPath();for(let i=0;i<=4;i++){const f=i/4,r=w*(.1+.09*Math.sin(f*Math.PI)),cx=x+w*f,cy=y-Math.sin(f*Math.PI)*w*.08;c.moveTo(cx+r,cy);c.arc(cx,cy,r,0,6.283)}c.fill()}
+function frame(t){
+  const c=bg.getContext("2d"),s=scene,W=s.W,H=s.H,k=s.kind;c.clearRect(0,0,W,H);
+  if(k==="clear"&&!s.night){const g=c.createRadialGradient(W*.82,H*.14,0,W*.82,H*.14,Math.min(W,H)*.45);g.addColorStop(0,"rgba(255,244,190,.95)");g.addColorStop(.25,"rgba(255,221,120,.55)");g.addColorStop(1,"rgba(255,221,120,0)");c.fillStyle=g;c.fillRect(0,0,W,H)}
+  if(s.night&&(k==="clear"||k==="cloudy")){c.fillStyle="rgba(250,248,230,.95)";c.beginPath();c.arc(W*.8,H*.16,Math.min(W,H)*.045,0,6.283);c.fill()}
+  for(const st of s.stars){c.fillStyle=`rgba(255,255,255,${(.55+.45*Math.sin(t/700+st.p)).toFixed(2)})`;c.beginPath();c.arc(st.x,st.y,st.r,0,6.283);c.fill()}
+  const col=k==="storm"?"rgba(58,66,80,.92)":k==="rain"?"rgba(105,121,137,.85)":s.night?"rgba(160,176,198,.38)":k==="snow"?"rgba(236,243,249,.9)":"rgba(255,255,255,.88)";
+  for(const cl of s.clouds){cloud(c,cl.x,cl.y,cl.w,col);cl.x+=cl.v;if(cl.x-cl.w*.2>W)cl.x=-cl.w*1.2}
+  if(k==="fog"){for(let i=0;i<5;i++){const x=((t/60+i*W*.3)%(W*1.6))-W*.3,y=H*(.12+i*.17);c.fillStyle=s.night?"rgba(160,176,198,.16)":"rgba(255,255,255,.28)";c.beginPath();c.ellipse(x,y,W*.35,34,0,0,6.283);c.fill()}}
+  if(k==="rain"||k==="storm"){c.strokeStyle="rgba(205,225,245,.6)";c.lineWidth=1.2;c.beginPath();for(const d of s.drops){c.moveTo(d.x,d.y);c.lineTo(d.x-d.r*.25,d.y+d.r);d.y+=d.v;d.x-=d.v*.25;if(d.y>H){d.y=-20;d.x=Math.random()*(W+120)}if(d.x<-20)d.x+=W+40}c.stroke()}
+  if(k==="snow"){c.fillStyle="rgba(255,255,255,.92)";c.beginPath();for(const d of s.drops){const x=d.x+Math.sin(t/900+d.p)*14;c.moveTo(x+d.r,d.y);c.arc(x,d.y,d.r,0,6.283);d.y+=d.v;if(d.y>H+10){d.y=-10;d.x=Math.random()*W}}c.fill()}
+  if(k==="storm"){if(Math.random()<.006)flash=1;if(flash>0){c.fillStyle=`rgba(255,255,255,${(flash*.45).toFixed(2)})`;c.fillRect(0,0,W,H);flash-=.07}}}
+function loopBg(){
+  cancelAnimationFrame(bgRaf);const on=root.dataset.theme==="weather"&&!!scene;bg.hidden=!on;if(!on)return;
+  if(scene.W!==(window.innerWidth||1024)||scene.H!==(window.innerHeight||768)){sizeBg();seedBg()}
+  const still=root.dataset.motion==="reduced",tick=t=>{frame(t);if(!still&&!document.hidden)bgRaf=requestAnimationFrame(tick)};
+  tick(still?1000:0)}
+function setScene(code){
+  const kind=kindOf(code),hr=new Date().getHours(),night=hr<6||hr>=20,[a,b]=SKYS[kind][night?1:0];
+  root.style.setProperty("--sky1",a);root.style.setProperty("--sky2",b);
+  scene={kind,night,clouds:[],drops:[],stars:[]};sizeBg();seedBg();loopBg()}
+if(window.addEventListener)window.addEventListener("resize",()=>{if(root.dataset.theme==="weather"){sizeBg();seedBg();loopBg()}});
+if(document.addEventListener)document.addEventListener("visibilitychange",()=>loopBg());
+$("#wxalert").onclick=()=>{const c=$("#wcard");if(c.scrollIntoView)c.scrollIntoView({behavior:"smooth"})};
+
+/* ---------- comments, reports, notifications ---------- */
+function bumpComments(id,n){const p=posts.find(x=>x.id===id);if(p){p.comments=Math.max(0,(p.comments||0)+n);renderFeed()}}
+async function openComments(id){
+  try{const d=await api(`/posts/${id}/comments`);cur={id,post:d.post,comments:d.comments};renderComments();$("#cErr").textContent="";if(!$("#comments").open)$("#comments").showModal()}
+  catch(e){toast(e.status===404?"That post is gone.":e.message)}}
+function renderComments(){
+  $("#cTitle").textContent=cur.post.title;
+  $("#cList").replaceChildren(...(cur.comments.length?cur.comments.map(c=>{
+    const canDel=!!me&&(isMe(c.username)||me.isDev||isMe(cur.post.username));
+    return el("div",{class:"mrow",style:"align-items:flex-start"},avatar(c.username),
+      el("div",{class:"grow"},el("div",{},el("button",{class:"userbtn",onclick:()=>{$("#comments").close();openProfile(c.username)}},nameEl(c.displayName,c.color,c.flair,c.premium)),` @${c.username} · ${ago(c.ts)} `,...(c.early?[earlyBadge()]:[])),el("div",{style:"white-space:pre-wrap;overflow-wrap:anywhere"},c.text)),
+      el("div",{class:"acts"},...(me&&!isMe(c.username)?[el("button",{class:"btn quiet sm",onclick:()=>openReport({type:"comment",postId:cur.id,cid:c.cid})},"Report")]:[]),...(canDel?[el("button",{class:"btn quiet sm",onclick:()=>delComment(c)},"Delete")]:[])))}):[el("div",{class:"empty"},"No comments yet.")]));
+  $("#cForm").hidden=!me;$("#cLogin").hidden=!!me}
+async function delComment(c){try{await api(`/comments/${cur.id}/${c.cid}/delete`,{body:{}});cur.comments=cur.comments.filter(x=>x.cid!==c.cid);bumpComments(cur.id,-1);renderComments()}catch(e){$("#cErr").textContent=e.message}}
+$("#cForm").onsubmit=async e=>{e.preventDefault();$("#cErr").textContent="";
+  try{await api(`/posts/${cur.id}/comment`,{body:{text:$("#cText").value}});$("#cText").value="";const id=cur.id;await openComments(id);bumpComments(id,1)}catch(x){$("#cErr").textContent=x.message}};
+$("#cLogin").onclick=()=>{$("#comments").close();openAuth("login")};
+function openReport(t){if(!me){openAuth("login");return}reporting=t;$("#rReason").value="rating";$("#rNote").value="";$("#rErr").textContent="";$("#report").showModal()}
+$("#rForm").onsubmit=async e=>{e.preventDefault();$("#rErr").textContent="";const t=reporting;
+  try{await api(t.type==="post"?`/posts/${t.postId}/report`:t.type==="listing"?`/market/${t.postId}/report`:t.type==="message"?`/dm/${t.friend}/report`:`/comments/${t.postId}/${t.cid}/report`,{body:{reason:$("#rReason").value,note:$("#rNote").value,...(t.type==="message"?{id:t.id}:{})}});$("#report").close();toast("Thanks. We'll take a look.")}catch(x){$("#rErr").textContent=x.message}};
+const notifText=n=>n.type==="follow"?`${n.displayName} (@${n.from}) started following you`:n.type==="like"?`${n.displayName} liked your post "${n.title}"`:n.type==="friend_request"?`${n.displayName} (@${n.from}) wants to be your friend`:n.type==="friend_accept"?`${n.displayName} accepted your friend request`:n.type==="premium"?n.title:n.type==="tip"?`${n.displayName} tipped you ${n.amount} credits on "${n.title}"`:n.type==="sale"?`${n.displayName} bought your image "${n.title}" (+${n.amount} credits)`:`${n.displayName} commented on "${n.title}"`;
+async function openNotifs(){
+  try{const d=await api("/notifications");
+    $("#nList").replaceChildren(...(d.items.length?d.items.map(n=>el("button",{class:"mrow",onclick:()=>{$("#notifs").close();if(n.type==="follow")openProfile(n.from);else if(n.type==="sale")openMarket("mine");else if(n.type==="premium")openWallet();else if(n.type==="friend_request"||n.type==="friend_accept")openMessages();else openComments(n.postId)}},avatar(n.from||"wc"),el("span",{class:"grow"},notifText(n)+" ",el("span",{class:"by"},ago(n.ts))))):[el("div",{class:"empty"},"Nothing yet. Likes, follows and comments will show up here.")]));
+    $("#notifs").showModal();
+    if(unread){unread=0;renderChrome();api("/notifications/read",{body:{}}).catch(()=>{})}}
+  catch(e){toast(e.message)}}
+async function pollNotifs(){if(!me||(maint&&!me.isDev))return;
+  try{const d=await api("/notifications/count");unread=d.unread;reports=d.reports||0;dmCount=d.dms||0;reqCount=d.requests||0;wallet={balance:d.balance||0,streak:d.streak||0,canCheckIn:!!d.canCheckIn,freezes:d.freezes||0};renderChrome();
+    if(me.premium&&me.premiumUntil&&me.premiumUntil<=Date.now()){me=(await api("/me")).user;if(!me.premium&&root.dataset.theme==="weather")applyTheme("light");render()}
+    if(wallet.canCheckIn&&!announcedCI){announcedCI=true;toast("Your daily Weather Credits are ready! 🪙")}}catch{}}
+
+/* ---------- profile bio, install, alerts ---------- */
+$("#sBioGo").onclick=async()=>{try{const r=await api("/settings",{body:{bio:$("#sBio").value}});me=r.user;toast("Bio saved");if(view.kind==="profile"&&isMe(view.username)){view.profile.bio=me.bio;renderHead()}}catch(x){$("#sErr").textContent=x.message}};
+$("#sAlerts").onchange=e=>{LS.set("wc_alerts",e.target.checked?"on":"off");if(lastW)renderWeather(lastW)};
+if(window.addEventListener)window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferred=e});
+function installNote(){
+  const ua=typeof navigator!=="undefined"?navigator.userAgent:"",standalone=!!matchMedia("(display-mode: standalone)").matches||(typeof navigator!=="undefined"&&navigator.standalone===true);
+  $("#sInstallGo").hidden=!deferred||standalone;
+  $("#sInstallNote").textContent=standalone?"You're using the installed app.":deferred?"Install WC Blog for quick access from your home screen.":/iphone|ipad|ipod/i.test(ua)?"On iPhone or iPad: tap the Share button, then Add to Home Screen.":"In your browser menu, choose Install app or Add to Home screen."}
+$("#sInstallGo").onclick=async()=>{if(!deferred)return;deferred.prompt();try{await deferred.userChoice}catch{}deferred=null;installNote()};
+$("#pwbarGo").onclick=()=>openSettings();
+$("#devRecover").onclick=async()=>{$("#authErr").textContent="";try{await api("/dev-recover",{body:{devCode:$("#fDev").value,password:$("#fPass").value}});toast("Developer password reset. You can log in with it now.")}catch(x){$("#authErr").textContent=x.message}};
+
+/* ---------- friends and private messages ---------- */
+async function openMessages(){stopChat();await loadFriends();if(!$("#msgs").open)$("#msgs").showModal()}
+async function loadFriends(){
+  try{friendsData=await api("/friends");renderFriends()}
+  catch(e){$("#mBody").replaceChildren(el("div",{class:"empty"},e.status===403?"Messaging is paused right now. Check back soon.":e.message));if(!me&&!$("#msgs").open)openAuth("login")}}
+const afterFriendChange=async()=>{await loadFriends();pollNotifs()};
+function renderFriends(){
+  const d=friendsData,row=(u,...acts)=>el("div",{class:"mrow"},avatar(u.username),el("span",{class:"grow"},nameEl(u.displayName,u.color,u.flair,u.premium)," @"+u.username),...acts);
+  const addIn=el("input",{placeholder:"Add a friend by username",maxlength:21,class:"grow"}),addGo=el("button",{class:"btn sm"},"Send request");
+  addGo.addEventListener("click",async()=>{const u=addIn.value.trim().replace(/^@/,"");if(!u)return;try{const r=await api("/friends/request",{body:{username:u}});addIn.value="";toast(r.status==="friends"?"You're friends now!":"Friend request sent");afterFriendChange()}catch(e){toast(e.message)}});
+  const act=(path,u,extra={})=>async()=>{try{await api(path,{body:{username:u.username,...extra}});afterFriendChange()}catch(e){toast(e.message)}};
+  const out=[el("div",{class:"foot"},addIn,addGo)];
+  if(d.incoming.length)out.push(el("h3",{},"Friend requests"),...d.incoming.map(u=>row(u,el("button",{class:"btn sm",onclick:act("/friends/respond",u,{accept:true})},"Accept"),el("button",{class:"btn quiet sm",onclick:act("/friends/respond",u,{accept:false})},"Decline"))));
+  out.push(el("h3",{},"Friends"),...(d.friends.length?d.friends.map(u=>el("button",{class:"mrow",onclick:()=>openChat(u.username)},avatar(u.username),
+    el("span",{class:"grow"},nameEl(u.displayName,u.color,u.flair,u.premium)," @"+u.username,el("div",{class:"by"},(u.lastFromMe?"You: ":"")+(u.preview||"Say hi! 👋"))),...(u.unread?[el("span",{class:"dot",title:"New messages"})]:[]))):[el("div",{class:"by"},"No friends yet. Send a request above, or tap Add friend on someone's profile.")]));
+  if(d.outgoing.length)out.push(el("h3",{},"Sent requests"),...d.outgoing.map(u=>row(u,el("button",{class:"btn quiet sm",onclick:act("/friends/cancel",u)},"Cancel"))));
+  if(d.blocked.length)out.push(el("h3",{},"Blocked"),...d.blocked.map(u=>row(u,el("button",{class:"btn quiet sm",onclick:act("/friends/block",u,{block:false})},"Unblock"))));
+  $("#mBody").replaceChildren(...out)}
+function stopChat(){clearInterval(chatTimer);chatWith=null}
+async function openChat(u){
+  try{const d=await api("/dm/"+encodeURIComponent(u));chatWith=u.toLowerCase();chatData=d;chatSeen=new Set();chatLast=d.messages.length?d.messages[d.messages.length-1].id:"";
+    renderChat();dmCount=Math.max(0,dmCount-1);renderChrome();
+    clearInterval(chatTimer);chatTimer=setInterval(async()=>{if(!chatWith)return;try{const n=await api(`/dm/${chatWith}?after=${encodeURIComponent(chatLast)}`);n.messages.forEach(m=>{addMsg(m);chatLast=m.id})}catch{}},6000)}
+  catch(e){toast(e.message)}}
+function addMsg(m){
+  if(chatSeen.has(m.id))return;chatSeen.add(m.id);
+  const mineM=!!me&&m.from===me.username.toLowerCase(),b=el("div",{class:"bubble "+(mineM?"mine":"theirs")},m.text,
+    el("small",{},ago(m.ts)+" · ",el("button",{class:"userbtn",onclick:()=>mineM?delMsg(m,b):openReport({type:"message",friend:chatWith,id:m.id})},mineM?"Delete":"Report")));
+  chatEls.list.append(b);chatEls.list.scrollTop=chatEls.list.scrollHeight}
+async function delMsg(m,b){try{await api(`/dm/${chatWith}/delete`,{body:{id:m.id}});b.remove()}catch(e){toast(e.message)}}
+function renderChat(){
+  const f=chatData.friend,list=el("div",{class:"chatlist"}),input=el("input",{placeholder:"Write a message…",maxlength:1000,class:"grow"}),go=el("button",{class:"btn sm"},"Send");chatEls={list,input};
+  const send=async()=>{const t=input.value.trim();if(!t)return;go.disabled=true;try{const r=await api("/dm/"+chatWith,{body:{text:t}});input.value="";addMsg({id:r.id,from:me.username.toLowerCase(),text:t,ts:r.ts});chatLast=r.id}catch(e){toast(e.message)}finally{go.disabled=false}};
+  go.addEventListener("click",send);input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();send()}});
+  $("#mBody").replaceChildren(el("div",{class:"foot"},el("button",{class:"btn quiet sm",onclick:()=>{stopChat();loadFriends()}},"← Back"),avatar(f.username),el("b",{class:"grow"},nameEl(f.displayName,f.color,f.flair,f.premium)," @"+f.username)),list,el("div",{class:"foot"},input,go),
+    el("div",{class:"foot"},el("button",{class:"btn quiet sm",onclick:()=>ask(`Unfriend @${f.username}?`,"You won't be able to message each other until you're friends again.","Unfriend",async()=>{await api("/friends/remove",{body:{username:f.username}});stopChat();await afterFriendChange()})},"Unfriend"),
+      el("button",{class:"btn quiet sm",onclick:()=>ask(`Block @${f.username}?`,"You won't be able to message or send each other requests. You can unblock them in Messages.","Block",async()=>{await api("/friends/block",{body:{username:f.username,block:true}});stopChat();await afterFriendChange()})},"Block")));
+  chatData.messages.forEach(addMsg)}
+$("#msgs").addEventListener("close",()=>{stopChat();pollNotifs()});
+$("#sFriendReq").onchange=async e=>{const want=e.target.checked;try{const r=await api("/settings",{body:{friendRequests:want}});me=r.user}catch(x){e.target.checked=!want;$("#sErr").textContent=x.message}};
+const devMsgState=()=>{$("#dMsgState").textContent=msgOn?"Messaging is open.":"Messaging is paused for everyone.";$("#dMsgSw").textContent=msgOn?"Pause messaging":"Open messaging"};
+$("#dMsgSw").onclick=async()=>{try{const r=await api("/admin/messaging",{body:{on:!msgOn}});msgOn=r.messaging;devMsgState();toast(msgOn?"Messaging is open":"Messaging paused")}catch(e){$("#devErr").textContent=e.message}};
+
+/* ---------- Weather Credits, shop, market, tips ---------- */
+const nameEl=(n,color,flair,premium)=>el("span",{class:"nm"+(color?" c-"+color:"")},n,...(flair?[" "+flair]:[]),...(premium?[" ⭐"]:[]));
+function ask(title,text,label,fn){$("#askT").textContent=title;$("#askP").textContent=text;$("#askGo").textContent=label;$("#askErr").textContent="";askFn=fn;$("#ask").showModal()}
+$("#askGo").onclick=async()=>{$("#askGo").disabled=true;try{await askFn();$("#ask").close()}catch(e){$("#askErr").textContent=e.message}finally{$("#askGo").disabled=false}};
+async function openWallet(){
+  try{const[w,shop,top]=await Promise.all([api("/wallet"),api("/shop"),api("/wallet/top")]);
+    wallet={balance:w.balance,streak:w.streak,canCheckIn:w.canCheckIn,freezes:w.freezes};renderChrome();renderWallet(w,shop,top);
+    if(!$("#wallet").open)$("#wallet").showModal()}
+  catch(e){toast(e.message)}}
+function renderWallet(w,shop,top){
+  $("#wBal").textContent="🪙 "+w.balance;
+  $("#wStreak").textContent=(w.streak?`🔥 ${w.streak}-day streak`:"No streak yet")+` · best ${w.best} · ${w.freezes} Streak Freeze${w.freezes===1?"":"s"}`;
+  $("#wCheck").textContent=w.canCheckIn?`Check in (+${w.nextReward})`:"Checked in today ✓";$("#wCheck").disabled=!w.canCheckIn;
+  const buy=i=>el("button",{class:"btn sm",onclick:()=>shopBuy(i)},`Buy · 🪙 ${i.price}`),pr=shop.premium;
+  const row=i=>{const owned=shop.owned.includes(i.id),eq=shop.equipped[i.kind]===i.id;
+    return el("div",{class:"mrow"},el("span",{class:"grow"},i.kind==="freeze"?`🧊 ${i.name} (${shop.freezes}/${shop.freezeCap} held)`:(i.emoji?i.emoji+" ":"")+i.name),
+      i.kind==="freeze"||!owned?buy(i):el("button",{class:"btn quiet sm",onclick:()=>equip(i,eq)},eq?"Remove":"Equip"))};
+  const days=pr.active?Math.ceil((pr.until-Date.now())/864e5):0,auto=el("input",{type:"checkbox"});auto.checked=pr.auto;auto.addEventListener("change",()=>setAuto(auto.checked));
+  const card=el("div",{class:"panel",style:"padding:12px;display:grid;gap:6px"},el("b",{},`⭐ WC Blog Premium · 🪙 ${pr.price} / month`),
+    el("div",{class:"by"},"🎬 Post videos · 🌦️ Weather Mode background · ⭐ badge by your name · +5 credits on every check-in · 5% market fee instead of 10% · hold 5 Streak Freezes and get a free one every month · 100 listing slots"),
+    el("div",{class:"by"},pr.active?`Active · ${days} day${days===1?"":"s"} left`+(pr.auto?" · renews automatically":" · won't renew"):"Not active. About 10 days of check-ins earns your first month."),
+    el("div",{class:"foot"},el("button",{class:"btn sm",onclick:buyPremium},pr.active?"Extend 30 days":"Get Premium"),...(pr.active||pr.auto?[el("label",{class:"check"},auto," Auto-renew")]:[])));
+  $("#wShop").replaceChildren(el("h4",{style:"margin:4px 0"},"WCD"),...shop.items.filter(i=>i.section==="wcd").map(row),card,el("h4",{style:"margin:10px 0 4px"},"Style"),...shop.items.filter(i=>i.section==="style").map(row));
+  $("#wTop").replaceChildren(...(top.top.length?top.top.map((t,k)=>el("div",{class:"mrow"},el("span",{class:"grow"},`${k+1}. `,nameEl(t.displayName,t.color,t.flair,t.premium),` @${t.username}`),el("b",{},"🔥 "+t.streak))):[el("div",{class:"by"},"Nobody has a streak yet. Be the first!")]));
+  $("#wLog").replaceChildren(...(w.log.length?w.log.map(l=>el("div",{class:"mrow"},el("span",{class:"grow"},l.note||l.type),el("b",{},(l.n>0?"+":"")+l.n),el("span",{class:"by"},ago(l.ts)))):[el("div",{class:"by"},"Nothing yet. Check in to earn your first credits.")]))}
+function buyPremium(){ask("Get WC Blog Premium?","200 Weather Credits for 30 days. It renews automatically while you have enough credits, and you can turn that off any time.","Pay 🪙 200",async()=>{
+  await api("/shop/premium",{body:{}});me=(await api("/me")).user;render();toast("Welcome to Premium! ⭐");await openWallet()})}
+async function setAuto(on){try{await api("/shop/premium/auto",{body:{on}});toast(on?"Auto-renew is on":"Auto-renew is off")}catch(e){$("#wErr").textContent=e.message}}
+$("#wCheck").onclick=async()=>{try{const r=await api("/wallet/checkin",{body:{}});toast(`+${r.reward} Weather Credits! ${r.streakNow}-day streak${r.usedFreeze?" (Streak Freeze used)":""}`);await openWallet()}catch(e){$("#wErr").textContent=e.message}};
+async function shopBuy(i){try{await api("/shop/buy",{body:{item:i.id}});toast("Bought "+i.name);$("#wErr").textContent="";await openWallet()}catch(e){$("#wErr").textContent=e.message}}
+async function equip(i,on){try{const r=await api("/shop/equip",{body:{[i.kind]:on?null:i.id}});me=r.user;renderChrome();toast(on?"Removed":"Equipped!");$("#wErr").textContent="";await openWallet()}catch(e){$("#wErr").textContent=e.message}}
+
+function openMarket(tab="browse"){view={kind:"market"};mk.tab=tab;renderHead();loadMarket();window.scrollTo({top:0,behavior:"smooth"})}
+async function loadMarket(){
+  if((mk.tab==="mine"||mk.tab==="owned")&&!me){mk.tab="browse";renderHead();openAuth("login")}
+  const qs=mk.tab==="mine"?"?mine=1":mk.tab==="owned"?"?owned=1":mk.tab==="popular"?"?sort=popular":"";
+  try{listings=(await api("/market"+qs)).listings;renderMarket()}
+  catch(e){$("#feed").replaceChildren(el("div",{class:"empty"},e.status===403?"The marketplace is paused right now. Check back soon.":e.message))}}
+function listingCard(l){
+  const dev=!!me&&me.isDev,acts=[];
+  if(l.owned)acts.push(el("button",{class:"btn sm",onclick:()=>downloadImg(l)},"⬇ Download"));
+  else if(l.mine)acts.push(...(l.active?[el("button",{class:"btn quiet sm",onclick:()=>takeDown(l)},"Take down")]:[el("span",{class:"badge"},"Taken down")]));
+  else acts.push(el("button",{class:"btn sm",onclick:()=>buyListing(l)},`Buy · 🪙 ${l.price}`));
+  if(me&&!l.mine&&!l.owned)acts.push(el("button",{class:"btn quiet sm",onclick:()=>openReport({type:"listing",postId:l.id})},"Report"));
+  if(dev&&!l.mine)acts.push(el("button",{class:"btn quiet sm",onclick:()=>modRemove(l)},"Remove (mod)"));
+  return el("article",{class:"panel post"},el("img",{class:"blurimg",src:l.preview,alt:"Blurred preview of "+l.title}),
+    el("div",{class:"in"},el("div",{class:"meta"},el("span",{class:"price"},"🪙 "+l.price),el("span",{class:"badge"+(l.rating==="13+"?" t":"")},l.rating==="13+"?"13+":"All ages"),el("span",{class:"by"},`${l.sales} sold`),...(l.owned?[el("span",{class:"badge early"},"Owned ✓")]:[])),
+      el("h2",{style:"font-size:22px"},l.title),...(l.desc?[el("p",{},l.desc)]:[]),
+      el("div",{class:"foot"},avatar(l.seller.username),el("div",{class:"by grow"},el("button",{class:"userbtn",onclick:()=>openProfile(l.seller.username)},nameEl(l.seller.displayName,l.seller.color,l.seller.flair,l.seller.premium))," @"+l.seller.username),el("div",{class:"acts"},...acts))))}
+function renderMarket(){$("#feed").replaceChildren(...(listings.length?listings.map(listingCard):[el("div",{class:"empty"},mk.tab==="mine"?"You haven't listed anything yet. Tap Sell an image.":mk.tab==="owned"?"You haven't bought anything yet.":"Nothing for sale yet. Be the first to sell an image!")]))}
+function buyListing(l){
+  if(!me){openAuth("login");return}
+  ask("Buy this image?",`"${l.title}" costs ${l.price} Weather Credits. You have ${wallet.balance}. The seller gets 90%.`,`Buy for 🪙 ${l.price}`,async()=>{
+    const r=await api(`/market/${l.id}/buy`,{body:{}});if(r.balance!=null)wallet.balance=r.balance;renderChrome();toast(r.already?"You already own this image":"Unlocked! Find it under My purchases.");loadMarket()})}
+async function downloadImg(l){
+  try{const d=await api(`/market/${l.id}/image`),ext=(d.image.match(/^data:image\/(\w+)/)||[])[1]||"jpg",a=el("a",{href:d.image,download:((l.title||"image").replace(/[^\w\- ]+/g,"").trim().slice(0,40)||"image")+"."+ext});document.body.append(a);a.click();a.remove()}
+  catch(e){toast(e.message)}}
+function takeDown(l){ask("Take this listing down?","It disappears from the market. People who already bought it keep their copy.","Take down",async()=>{await api(`/market/${l.id}/takedown`,{body:{}});toast("Listing taken down");loadMarket()})}
+function modRemove(l){ask("Remove this listing?","It is deleted for good. Refunding gives every buyer their credits back.","Remove and refund buyers",async()=>{await api(`/market/${l.id}/takedown`,{body:{remove:true,refund:true}});toast("Removed and refunded");loadMarket()})}
+function openSell(){
+  if(!me){openAuth("signup");return}
+  $("#sellForm").reset();$("#slErr").textContent="";$("#sell").showModal()}
+function mosaic(file){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>{const h=Math.max(1,Math.round(160*i.height/i.width)),s=el("canvas");s.width=16;s.height=Math.max(1,Math.round(16*i.height/i.width));s.getContext("2d").drawImage(i,0,0,s.width,s.height);const c=el("canvas");c.width=160;c.height=h;const y=c.getContext("2d");y.imageSmoothingEnabled=true;y.drawImage(s,0,0,160,h);URL.revokeObjectURL(i.src);ok(c.toDataURL("image/jpeg",.5))};i.onerror=()=>no(new Error("That file isn't a readable image."));i.src=URL.createObjectURL(file)})}
+$("#sellForm").onsubmit=async e=>{
+  e.preventDefault();$("#slErr").textContent="";$("#slGo").disabled=true;
+  try{const f=$("#slFile").files[0];if(!f)throw new Error("Choose an image first.");
+    const[image,preview]=await Promise.all([shrink(f),mosaic(f)]);
+    await api("/market",{body:{title:$("#slTitle").value,desc:$("#slDesc").value,price:parseInt($("#slPrice").value,10),rights:$("#slRights").checked,image,preview}});
+    $("#sell").close();toast("Listed! It's under My listings.");mk.tab="mine";view={kind:"market"};renderHead();loadMarket()}
+  catch(x){$("#slErr").textContent=x.message}finally{$("#slGo").disabled=false}};
+function openTip(p){
+  if(!me){openAuth("login");return}
+  tipping=p;$("#tipP").textContent=`Send Weather Credits to ${p.displayName}. You have ${wallet.balance}.`;$("#tipErr").textContent="";
+  $("#tipChips").replaceChildren(...[5,10,25].map(n=>el("button",{class:"btn sm",onclick:()=>sendTip(n)},"🪙 "+n)));$("#tip").showModal()}
+async function sendTip(n){try{const r=await api(`/posts/${tipping.id}/tip`,{body:{amount:n}});wallet.balance=r.balance;renderChrome();$("#tip").close();toast(`Sent ${n} credits to ${tipping.displayName}`)}catch(e){$("#tipErr").textContent=e.message}}
+function boostPost(p){ask("Boost this post?","For 150 Weather Credits it ranks higher in Recommended and shows a 🚀 badge for 24 hours.","Boost for 🪙 150",async()=>{const r=await api(`/posts/${p.id}/boost`,{body:{}});wallet.balance=r.balance;renderChrome();toast("Boosted for 24 hours");await loadPosts()})}
+function showUpdate(force){
+  const u=site.update;if(!u||(!force&&LS.get("wc_seen_update")===u.id)||(maint&&!(me&&me.isDev)))return;
+  $("#uTitle").textContent="✨ "+u.title;$("#uDate").textContent=new Date(u.ts).toLocaleDateString();$("#uList").replaceChildren(...u.notes.map(n=>el("li",{},n)));
+  if(!$("#updates").open)$("#updates").showModal()}
+const seeUpdate=()=>{if(site.update)LS.set("wc_seen_update",site.update.id)};
+$("#uGo").onclick=()=>{seeUpdate();$("#updates").close()};$("#updates").addEventListener("close",seeUpdate);
+$("#sWhats").onclick=()=>{if(site.update)showUpdate(true);else toast("No updates yet. Check back soon!")};
+const devVideos=()=>{$("#dVideosState").textContent=videosOn?"Video uploads are open.":"Video uploads are paused for everyone.";$("#dVideos").textContent=videosOn?"Pause video uploads":"Open video uploads"};
+$("#dVideos").onclick=async()=>{try{const r=await api("/admin/videos",{body:{on:!videosOn}});videosOn=r.videos;devVideos();toast(videosOn?"Video uploads are open":"Video uploads paused")}catch(e){$("#devErr").textContent=e.message}};
+$("#dPremGo").onclick=async()=>{try{const r=await api("/admin/premium",{body:{username:$("#dPremU").value.trim(),days:parseInt($("#dPremDays").value,10)}});$("#devErr").textContent="";toast(r.until?"Premium until "+new Date(r.until).toLocaleDateString():"Premium removed");loadOverview()}catch(e){$("#devErr").textContent=e.message}};
+$("#dUpGo").onclick=async()=>{try{const r=await api("/admin/update",{body:{title:$("#dUpT").value,notes:$("#dUpN").value.split("\n")}});site={...site,update:r.update};$("#devErr").textContent="";toast("Update published. Everyone will see it.");showUpdate(true)}catch(e){$("#devErr").textContent=e.message}};
+$("#dUpClear").onclick=async()=>{try{await api("/admin/update",{body:{clear:true}});site={...site,update:null};toast("Update cleared")}catch(e){$("#devErr").textContent=e.message}};
+const devMarket=()=>{$("#dMarketState").textContent=marketOn?"The marketplace is open.":"The marketplace is paused for everyone but you.";$("#dMarket").textContent=marketOn?"Pause marketplace":"Open marketplace"};
+$("#dMarket").onclick=async()=>{try{const r=await api("/admin/market",{body:{on:!marketOn}});marketOn=r.market;devMarket();toast(marketOn?"Marketplace is open":"Marketplace paused")}catch(e){$("#devErr").textContent=e.message}};
+$("#dGive").onclick=async()=>{try{const r=await api("/admin/credits",{body:{username:$("#dGiveU").value.trim(),amount:parseInt($("#dGiveN").value,10),note:$("#dGiveNote").value}});$("#devErr").textContent="";toast(`Done. New balance: ${r.balance}`);loadOverview()}catch(e){$("#devErr").textContent=e.message}};
+
+/* ---------- start-up ---------- */
+async function refreshStatus(first){
+  try{const s=await api("/status"),was=maint;maint=s.maintenance;marketOn=s.market!==false;videosOn=s.videos!==false;msgOn=s.messaging!==false;site={message:s.message,until:s.until,announcement:s.announcement,update:s.update};renderChrome();
+    if(!first&&was&&!maint)loadPosts();if(!first)pollNotifs();showUpdate()}catch{}}
+(async()=>{
+  applyLook();
+  await refreshStatus(true);
+  if(token){try{me=(await api("/me")).user;if(me.theme)applyTheme(me.theme)}catch{token=null;LS.del("wc_token")}}
+  if(root.dataset.theme==="weather"){if(me&&me.premium)setScene(null);else applyTheme("light")}
+  render();renderHead();
+  if(!maint||(me&&me.isDev)){loadPosts();pollNotifs();const z=LS.get("wc_zip");if(z){$("#zip").value=z;loadWeather()}}
+  const iv=setInterval(()=>refreshStatus(false),45000);if(iv&&iv.unref)iv.unref();
+  try{navigator.serviceWorker.register("/sw.js")}catch{}
+})();
+</script>
+</body>
+</html>

@@ -43,9 +43,11 @@ const view = (key, rec) => {
   const age = ageOf(rec.birthdate);
   return { key, username: rec.username, displayName: rec.displayName, age, forced: age < 13,
     restricted: age < 13 || rec.restricted === true, theme: rec.theme || null,
-    bio: rec.bio || "", early: rec.createdAt < EARLY, mustChange: rec.mustChange === true };
+    bio: rec.bio || "", early: rec.createdAt < EARLY, mustChange: rec.mustChange === true,
+    flair: SHOP[rec.flair]?.emoji || null, color: rec.color ? rec.color.split(":")[1] : null,
+    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false };
 };
-const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, isDev: u.key === DEV });
+const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, isDev: u.key === DEV });
 
 const getUser = async (token) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
@@ -99,6 +101,116 @@ async function moveLikes(oldPost, id, newPost, newId) {
   }
 }
 
+// ---------- Weather Credits (play money: no cash value, can't be bought or cashed out) ----------
+const dayKey = (ms = Date.now()) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+const dayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 864e5);
+const FEE_PCT = 10, BOOST_PRICE = 150, TIPS = [5, 10, 25];
+const SHOP = {
+  freeze: { name: "Streak Freeze", price: 50, kind: "freeze" },
+  "color:sunset": { name: "Sunset name colour", price: 100, kind: "color" },
+  "color:ocean": { name: "Ocean name colour", price: 100, kind: "color" },
+  "color:aurora": { name: "Aurora name colour", price: 150, kind: "color" },
+  "color:gold": { name: "Gold name colour", price: 250, kind: "color" },
+  "flair:sun": { name: "Sunny badge", price: 75, kind: "flair", emoji: "☀️" },
+  "flair:storm": { name: "Storm badge", price: 75, kind: "flair", emoji: "⛈️" },
+  "flair:snow": { name: "Snowflake badge", price: 75, kind: "flair", emoji: "❄️" },
+  "flair:rainbow": { name: "Rainbow badge", price: 75, kind: "flair", emoji: "🌈" },
+  "flair:tornado": { name: "Tornado badge", price: 75, kind: "flair", emoji: "🌪️" },
+};
+for (const [k, i] of Object.entries(SHOP)) i.section = k === "freeze" ? "wcd" : "style"; // shop sections: WCD / Style
+const DAY_MS = 864e5, PREMIUM_PRICE = 200, PREMIUM_DAYS = 30, VIDEO_MAX = 3.5 * 1024 * 1024;
+const premiumActive = (w) => (w.premiumUntil || 0) > Date.now();
+const freezeCap = (w) => (premiumActive(w) ? 5 : 3);
+const newWallet = () => ({ balance: 0, streak: 0, best: 0, lastDay: null, freezes: 0, owned: [], log: [] });
+const addLog = (w, type, n, note) => { w.log.unshift({ type, n, note, ts: Date.now() }); w.log = w.log.slice(0, 25); };
+const earn = (w, n, type, note) => { w.balance += n; addLog(w, type, n, note); };
+const spend = (w, n, note) => {
+  if (w.balance < n) throw new Fail(402, "You don't have enough Weather Credits.");
+  w.balance -= n; addLog(w, "spend", -n, note);
+};
+// Compare-and-swap on the wallet's ETag, retried, so two requests can never both spend the same credits.
+async function updateWallet(key, fn) {
+  const s = st("wallets");
+  for (let i = 0; i < 8; i++) {
+    const cur = await s.getWithMetadata(key, { type: "json" });
+    const w = cur ? cur.data : newWallet();
+    fn(w);
+    const r = cur ? await s.set(key, JSON.stringify(w), { onlyIfMatch: cur.etag }) : await s.set(key, JSON.stringify(w), { onlyIfNew: true });
+    if (r?.modified === true) return w;
+    await new Promise((res) => setTimeout(res, 10 + Math.random() * 40));
+  }
+  throw new Fail(409, "That's busy right now. Try again in a moment.");
+}
+const walletOf = async (key) => (await st("wallets").get(key, { type: "json" })) || newWallet();
+async function mirrorPremium(key, until) { // the user record keeps a copy of the expiry so names and gates don't need the wallet
+  const rec = await st("users").get(key, { type: "json" });
+  if (rec) { rec.premiumUntil = until; await st("users").set(key, JSON.stringify(rec)); }
+}
+async function maybeRenew(key, w0) { // auto-renew an expired Premium if the member can pay; otherwise let it lapse (once)
+  if (!w0.premiumUntil || w0.premiumUntil > Date.now() || !w0.autoRenew) return null;
+  try {
+    const w = await updateWallet(key, (w) => {
+      if (!(w.premiumUntil && w.premiumUntil <= Date.now() && w.autoRenew)) return;
+      spend(w, PREMIUM_PRICE, "WC Blog Premium (monthly renewal)");
+      w.premiumUntil = Date.now() + PREMIUM_DAYS * DAY_MS;
+      w.freezes = Math.min(freezeCap(w), w.freezes + 1);
+    });
+    if (w.premiumUntil > Date.now()) await mirrorPremium(key, w.premiumUntil);
+    return w;
+  } catch (e) {
+    if (!(e instanceof Fail) || e.status !== 402) throw e;
+    const w = await updateWallet(key, (w) => { w.autoRenew = false; });
+    await notify(key, { type: "premium", title: "Your WC Blog Premium ended because there weren't enough credits to renew it." }, "all");
+    return w;
+  }
+}
+function parseVideo(v) {
+  const m = typeof v === "string" && /^data:(video\/(?:mp4|webm|quicktime));base64,/.exec(v);
+  if (!m) throw new Fail(400, "Videos must be MP4, WebM or MOV files.");
+  const b64 = v.slice(m[0].length);
+  if (b64.length > 4.95e6 || !/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) throw new Fail(400, "That video file is too large or damaged.");
+  const buf = Buffer.from(b64, "base64");
+  if (buf.length > VIDEO_MAX) throw new Fail(400, "Videos can be up to 3.5 MB (about 10 to 20 seconds).");
+  const mp4 = buf.length > 12 && buf.subarray(4, 8).toString("latin1") === "ftyp";
+  const webm = buf.length > 12 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
+  if (m[1] === "video/webm" ? !webm : !mp4) throw new Fail(400, "That doesn't look like a real video file.");
+  return { type: m[1], data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
+}
+const streakInfo = (w) => {
+  if (!w.lastDay) return { alive: false, canCheckIn: true, effective: 0, gap: null };
+  const gap = dayDiff(w.lastDay, dayKey()), alive = gap <= 1 || (gap === 2 && w.freezes > 0);
+  return { alive, canCheckIn: gap !== 0, effective: alive ? w.streak : 0, gap };
+};
+const rewardFor = (n) => 10 + Math.min(n - 1, 9) * 2 + (n % 7 === 0 ? 25 : 0) + (n % 30 === 0 ? 100 : 0);
+const walletView = (w) => {
+  const i = streakInfo(w), next = i.canCheckIn ? (i.alive ? w.streak + 1 : 1) : w.streak + 1;
+  return { balance: w.balance, streak: i.effective, best: w.best, freezes: w.freezes, canCheckIn: i.canCheckIn, nextReward: rewardFor(next) + (premiumActive(w) ? 5 : 0), owned: w.owned,
+    premium: { active: premiumActive(w), until: w.premiumUntil || 0, auto: w.autoRenew === true, price: PREMIUM_PRICE } };
+};
+
+// ---------- friends + private messages ----------
+// Safety rules: friends only (both must agree), minors only friend minors within 4 years of their age and adults only adults,
+// blocks work both ways, and every message can be reported (the report keeps the last few messages as context).
+const friendOk = (a, b) => (a >= 18 && b >= 18) || (a < 18 && b < 18 && Math.abs(a - b) <= 4);
+let lastMsgTs = 0;
+const nextTs = () => (lastMsgTs = Math.max(Date.now(), lastMsgTs + 1)); // strictly increasing, so rapid messages keep their order
+const convId = (a, b) => (a < b ? `${a}~${b}` : `${b}~${a}`);
+const MSG_ID_RE = /^\d{13}-[a-f0-9]{8}$/, CONV_RE = /^[a-z0-9_]{3,20}~[a-z0-9_]{3,20}$/;
+const areFriends = async (a, b) => (await st("friends").get(`f~${a}~${b}`)) !== null;
+const blockedEither = async (a, b) => { const [x, y] = await Promise.all([st("blocks").get(`${a}~${b}`), st("blocks").get(`${b}~${a}`)]); return x !== null || y !== null; };
+async function makeFriends(a, b) {
+  const F = st("friends");
+  await F.set(`f~${a}~${b}`, "1"); await F.set(`f~${b}~${a}`, "1");
+  for (const k of [`req~${a}~${b}`, `req~${b}~${a}`, `out~${a}~${b}`, `out~${b}~${a}`]) await F.delete(k);
+}
+async function friendStatus(me, other) {
+  const F = st("friends");
+  if ((await F.get(`f~${me}~${other}`)) !== null) return "friends";
+  if ((await F.get(`req~${me}~${other}`)) !== null) return "received";
+  if ((await F.get(`req~${other}~${me}`)) !== null) return "sent";
+  return "none";
+}
+
 async function notify(toKey, n, rating) {
   const ts = Date.now();
   await st("notifs").set(`${toKey}~${String(9e12 - ts).padStart(13, "0")}-${rating === "13+" ? "t" : "a"}-${randomBytes(4).toString("hex")}`, JSON.stringify({ ...n, ts }));
@@ -130,7 +242,7 @@ async function addReport(target, user, body) {
 }
 const authorNames = async (items, field = "username") => new Map(await Promise.all([...new Set(items.map((x) => x[field].toLowerCase()))].map(async (k) => {
   const r = await st("users").get(k, { type: "json" });
-  return [k, { name: r?.displayName, early: !!r && r.createdAt < EARLY }];
+  return [k, { name: r?.displayName, user: r?.username, early: !!r && r.createdAt < EARLY, flair: SHOP[r?.flair]?.emoji || null, color: r?.color ? r.color.split(":")[1] : null, premium: (r?.premiumUntil || 0) > Date.now() }];
 })));
 
 async function route(req, context) {
@@ -140,21 +252,21 @@ async function route(req, context) {
   let body = {};
   if (method === "POST") {
     const raw = await req.text();
-    if (raw.length > 1500000) throw new Fail(413, "That upload is too large.");
+    if (raw.length > (path === "/posts" ? 5300000 : 1500000)) throw new Fail(413, "That upload is too large.");
     try { body = raw ? JSON.parse(raw) : {}; } catch { throw new Fail(400, "Bad request."); }
     if (!body || typeof body !== "object") body = {};
   }
   const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
   const user = token ? await getUser(token) : null;
   const isDev = !!user && user.key === DEV;
-  const [m, siteRaw] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" })]);
-  const maint = m === "on", site = siteRaw || {};
+  const [m, siteRaw, mk, vk, upd, ck] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging")]);
+  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off";
   if (maint && !isDev && !["/status", "/login", "/me", "/logout", "/dev-recover"].includes(path))
     throw new Fail(503, "WC Blog is in scheduled maintenance.", { maintenance: true, message: site.msg || "", until: site.until || "" });
   const ip = context?.ip || "unknown";
 
   if (method === "GET" && path === "/status")
-    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "" });
+    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, update: upd || null });
 
   if (method === "POST" && path === "/signup") {
     limit(ip + "s", 10);
@@ -222,6 +334,7 @@ async function route(req, context) {
     const rec = await st("users").get(user.key, { type: "json" });
     if (body.theme !== undefined) {
       if (!["light", "blue", "dark", "weather"].includes(body.theme)) throw new Fail(400, "Unknown theme.");
+      if (body.theme === "weather" && !user.premium) throw new Fail(403, "Weather Mode is a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
       rec.theme = body.theme;
     }
     if (body.restricted !== undefined) {
@@ -238,6 +351,10 @@ async function route(req, context) {
       const bio = String(body.bio).trim();
       if (bio.length > 160) throw new Fail(400, "Your bio can be up to 160 characters.");
       rec.bio = bio;
+    }
+    if (body.friendRequests !== undefined) {
+      if (typeof body.friendRequests !== "boolean") throw new Fail(400, "Bad request.");
+      rec.friendRequests = body.friendRequests;
     }
     await st("users").set(user.key, JSON.stringify(rec));
     return send({ user: pub(view(user.key, rec)) });
@@ -305,11 +422,12 @@ async function route(req, context) {
       const a = p.username.toLowerCase(), slug = slugOf(p.topic), n = counts.get(p.id) || 0;
       const tl = topics.get(slug) || 0, al = authors.get(a) || 0, f = followed.has(a);
       // Recommended: topics and authors you liked, people you follow, what's popular, and what's new.
-      const score = 5 * Math.min(tl, 5) + 3 * Math.min(al, 5) + (f ? 6 : 0) + Math.log2(1 + n) + 3 / (1 + (now - p.createdAt) / 36e5 / 24);
+      const score = 5 * Math.min(tl, 5) + 3 * Math.min(al, 5) + (f ? 6 : 0) + Math.log2(1 + n) + ((p.boostUntil || 0) > now ? 8 : 0) + 3 / (1 + (now - p.createdAt) / 36e5 / 24);
       const nm = names.get(a), name = nm?.name || p.displayName;
       const reason = f ? "From someone you follow" : tl ? `Because you liked #${p.topic} posts` : al ? `Because you liked posts by ${name}` : null;
       return { score, reason, post: { id: p.id, title: p.title, topic: p.topic, body: p.body, rating: p.rating, hasImage: p.hasImage,
-        username: p.username, displayName: name, early: nm?.early === true, createdAt: p.createdAt, editedAt: p.editedAt || null,
+        username: p.username, displayName: name, early: nm?.early === true, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true, hasVideo: !!p.hasVideo,
+        boosted: (p.boostUntil || 0) > now, createdAt: p.createdAt, editedAt: p.editedAt || null,
         likes: n, liked: iLike.has(p.id), comments: cc.get(p.id) || 0 } };
     });
     const showRec = tab === "recommended" && !tag && !by;
@@ -323,10 +441,18 @@ async function route(req, context) {
     const { t, tp, bo } = cleanPost(body);
     const image = body.image ?? null;
     if (image !== null) checkImage(image);
+    let vid = null;
+    if (body.video != null) {
+      if (!user.premium) throw new Fail(403, "Video posts are a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
+      if (!videosOn) throw new Fail(403, "Video uploads are paused right now.");
+      if (image !== null) throw new Fail(400, "Choose an image or a video, not both.");
+      vid = parseVideo(body.video);
+    }
     const rating = user.restricted ? "all" : body.rating; // restricted accounts can't publish 13+ posts
     const id = postId(String(9e12 - Date.now()).padStart(13, "0"), rating, randomBytes(4).toString("hex"));
     if (image) await st("images").set(id, image);
-    await st("posts").set(id, JSON.stringify({ id, title: t, topic: tp, body: bo, rating, hasImage: !!image,
+    if (vid) await st("videos").set(id, vid.data);
+    await st("posts").set(id, JSON.stringify({ id, title: t, topic: tp, body: bo, rating, hasImage: !!image, hasVideo: !!vid, videoType: vid?.type,
       username: user.username, displayName: user.displayName, createdAt: Date.now() }));
     return send({ id });
   }
@@ -346,10 +472,305 @@ async function route(req, context) {
     const unread = Math.min(keys.filter((k) => tsOf(k) > seen).length, 99);
     if (path === "/notifications/count") {
       const reports = isDev ? (await st("reports").list({ prefix: "r~" })).blobs.length : 0;
-      return send({ unread, reports });
+      let w0 = await walletOf(user.key); w0 = (await maybeRenew(user.key, w0)) || w0;
+      const wv = walletView(w0);
+      const [um, rq] = await Promise.all([st("dmunread").list({ prefix: `${user.key}~` }), st("friends").list({ prefix: `req~${user.key}~` })]);
+      return send({ unread, reports, balance: wv.balance, streak: wv.streak, canCheckIn: wv.canCheckIn, freezes: wv.freezes, dms: um.blobs.length, requests: rq.blobs.length });
     }
     const items = (await Promise.all(keys.slice(0, 30).map((k) => st("notifs").get(k, { type: "json" })))).filter(Boolean);
     return send({ items, unread });
+  }
+
+  if (path === "/wallet/top" && method === "GET") {
+    const keys = (await st("wallets").list()).blobs.map((b) => b.key).slice(0, 300);
+    const rows = (await Promise.all(keys.map(async (k) => ({ username: k, w: await st("wallets").get(k, { type: "json" }) }))))
+      .filter((r) => r.w).map((r) => ({ username: r.username, streak: streakInfo(r.w).effective, best: r.w.best }))
+      .filter((r) => r.streak > 0).sort((a, b) => b.streak - a.streak || b.best - a.best).slice(0, 10);
+    const names = await authorNames(rows);
+    return send({ top: rows.map((r) => { const nm = names.get(r.username); return { username: nm?.user || r.username, displayName: nm?.name || r.username, streak: r.streak, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true }; }) });
+  }
+  if (path === "/wallet" || path.startsWith("/wallet/") || path === "/shop" || path.startsWith("/shop/")) {
+    if (!user) throw new Fail(401, "Log in first.");
+    if (method === "GET" && path === "/wallet") { let w = await walletOf(user.key); w = (await maybeRenew(user.key, w)) || w; return send({ ...walletView(w), log: w.log.slice(0, 20) }); }
+    if (method === "POST" && path === "/wallet/checkin") {
+      limit(ip + "ci", 20);
+      let out;
+      const w = await updateWallet(user.key, (w) => {
+        const info = streakInfo(w);
+        if (!info.canCheckIn) throw new Fail(409, "You already checked in today. Come back tomorrow!");
+        let used = false;
+        if (w.lastDay && info.gap === 2 && w.freezes > 0) { w.freezes -= 1; w.streak += 1; used = true; }
+        else if (w.lastDay && info.gap === 1) w.streak += 1;
+        else w.streak = 1;
+        w.best = Math.max(w.best, w.streak); w.lastDay = dayKey();
+        const reward = rewardFor(w.streak) + (premiumActive(w) ? 5 : 0); // Premium members earn +5 a day
+        earn(w, reward, "checkin", `Day ${w.streak} streak`);
+        out = { reward, streakNow: w.streak, usedFreeze: used };
+      });
+      return send({ ...out, ...walletView(w) });
+    }
+    if (method === "GET" && path === "/shop") {
+      const [w, rec] = await Promise.all([walletOf(user.key), st("users").get(user.key, { type: "json" })]);
+      return send({ items: Object.entries(SHOP).map(([id, i]) => ({ id, name: i.name, price: i.price, kind: i.kind, section: i.section, emoji: i.emoji || null })),
+        freezeCap: freezeCap(w), premium: walletView(w).premium,
+        owned: w.owned, freezes: w.freezes, boostPrice: BOOST_PRICE, tips: TIPS, equipped: { color: rec.color || null, flair: rec.flair || null } });
+    }
+    if (method === "POST" && path === "/shop/buy") {
+      limit(ip + "sh", 30);
+      const id = String(body.item ?? "");
+      if (!Object.hasOwn(SHOP, id)) throw new Fail(404, "Unknown item.");
+      const it = SHOP[id];
+      const w = await updateWallet(user.key, (w) => {
+        if (it.kind === "freeze") { const cap = freezeCap(w); if (w.freezes >= cap) throw new Fail(409, `You can hold up to ${cap} Streak Freezes.`); }
+        else if (w.owned.includes(id)) throw new Fail(409, "You already own that.");
+        spend(w, it.price, it.name);
+        if (it.kind === "freeze") w.freezes += 1; else w.owned.push(id);
+      });
+      return send(walletView(w));
+    }
+    if (method === "POST" && path === "/shop/premium") {
+      limit(ip + "pr", 10);
+      const w = await updateWallet(user.key, (w) => {
+        const now = Date.now(), base = Math.max(w.premiumUntil || 0, now);
+        if (base - now > 60 * DAY_MS) throw new Fail(409, "You already have more than two months of Premium.");
+        spend(w, PREMIUM_PRICE, (w.premiumUntil || 0) > now ? "WC Blog Premium (extended 30 days)" : "WC Blog Premium");
+        w.premiumUntil = base + PREMIUM_DAYS * DAY_MS;
+        if (w.autoRenew === undefined) w.autoRenew = true;
+        w.freezes = Math.min(freezeCap(w), w.freezes + 1); // a free Streak Freeze with every month
+      });
+      await mirrorPremium(user.key, w.premiumUntil);
+      return send(walletView(w));
+    }
+    if (method === "POST" && path === "/shop/premium/auto") {
+      return send(walletView(await updateWallet(user.key, (w) => { w.autoRenew = body.on === true; })));
+    }
+    if (method === "POST" && path === "/shop/equip") {
+      const [w, rec] = await Promise.all([walletOf(user.key), st("users").get(user.key, { type: "json" })]);
+      for (const f of ["color", "flair"]) {
+        const v = body[f];
+        if (v === undefined) continue;
+        if (v === null) delete rec[f];
+        else if (typeof v === "string" && Object.hasOwn(SHOP, v) && SHOP[v].kind === f && w.owned.includes(v)) rec[f] = v;
+        else throw new Fail(403, "You don't own that yet.");
+      }
+      await st("users").set(user.key, JSON.stringify(rec));
+      return send({ user: pub(view(user.key, rec)) });
+    }
+  }
+
+  if (path === "/friends" || path.startsWith("/friends/") || path.startsWith("/dm/")) {
+    if (!user) throw new Fail(401, "Log in first.");
+    if (!msgOn) throw new Fail(403, "Messaging is paused right now.");
+    const F = st("friends"), who = (k) => (KEY_RE.test(k) ? k : null);
+    const shape = (names, k) => { const nm = names.get(k); return { username: nm?.user || k, displayName: nm?.name || k, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true }; };
+    if (method === "GET" && path === "/friends") {
+      const [fl, inc, out, bl, unr] = await Promise.all([F.list({ prefix: `f~${user.key}~` }), F.list({ prefix: `req~${user.key}~` }), F.list({ prefix: `out~${user.key}~` }),
+        st("blocks").list({ prefix: `${user.key}~` }), st("dmunread").list({ prefix: `${user.key}~` })]);
+      const third = (b) => b.key.split("~")[2], second = (b) => b.key.split("~")[1];
+      const friends = fl.blobs.map(third), incoming = inc.blobs.map(third), outgoing = out.blobs.map(third), blocked = bl.blobs.map(second), unread = new Set(unr.blobs.map(second));
+      const convs = new Map(await Promise.all(friends.map(async (k) => [k, await st("convs").get(`${user.key}~${k}`, { type: "json" })])));
+      const names = await authorNames([...friends, ...incoming, ...outgoing, ...blocked].map((k) => ({ username: k })));
+      return send({
+        friends: friends.map((k) => ({ ...shape(names, k), unread: unread.has(k), last: convs.get(k)?.last || 0, preview: convs.get(k)?.preview || "", lastFromMe: convs.get(k)?.lastFrom === user.key }))
+          .sort((x, y) => (y.unread - x.unread) || y.last - x.last),
+        incoming: incoming.map((k) => shape(names, k)), outgoing: outgoing.map((k) => shape(names, k)), blocked: blocked.map((k) => shape(names, k)),
+      });
+    }
+    if (method === "POST" && path.startsWith("/friends/")) {
+      const act = path.slice(9), t = who(String(body.username ?? "").toLowerCase());
+      if (!["request", "respond", "cancel", "remove", "block"].includes(act)) throw new Fail(404, "Not found.");
+      if (!t) throw new Fail(404, "We couldn't find that person.");
+      if (t === user.key) throw new Fail(400, "That's you!");
+      const rec = await st("users").get(t, { type: "json" });
+      if (!rec || rec.suspended) throw new Fail(404, "We couldn't find that person.");
+      if (act === "request") {
+        limit(ip + "fr", 20);
+        if (await areFriends(user.key, t)) throw new Fail(409, "You're already friends.");
+        if (await blockedEither(user.key, t)) throw new Fail(403, "You can't send this person a request.");
+        if (!friendOk(user.age, ageOf(rec.birthdate))) throw new Fail(403, "You can only be friends with people close to your own age.");
+        if (rec.friendRequests === false) throw new Fail(403, "This person isn't accepting friend requests.");
+        if ((await F.get(`req~${user.key}~${t}`)) !== null) { // they already asked you: that makes you friends
+          await makeFriends(user.key, t);
+          await notify(t, { type: "friend_accept", from: user.username, displayName: user.displayName }, "all");
+          return send({ status: "friends" });
+        }
+        if ((await F.get(`req~${t}~${user.key}`)) !== null) return send({ status: "sent" });
+        if ((await F.list({ prefix: `f~${user.key}~` })).blobs.length >= 200) throw new Fail(400, "You have 200 friends already.");
+        if ((await F.list({ prefix: `out~${user.key}~` })).blobs.length >= 50) throw new Fail(400, "You have 50 requests waiting. Cancel a few first.");
+        await F.set(`req~${t}~${user.key}`, "1"); await F.set(`out~${user.key}~${t}`, "1");
+        await notifyOnce(`freq~${user.key}~${t}`, t, { type: "friend_request", from: user.username, displayName: user.displayName }, "all");
+        return send({ status: "sent" });
+      }
+      if (act === "respond") {
+        if ((await F.get(`req~${user.key}~${t}`)) === null) throw new Fail(404, "That request is gone.");
+        if (body.accept === true) {
+          if (await blockedEither(user.key, t)) throw new Fail(403, "You can't accept this request.");
+          await makeFriends(user.key, t);
+          await notify(t, { type: "friend_accept", from: user.username, displayName: user.displayName }, "all");
+          return send({ status: "friends" });
+        }
+        await F.delete(`req~${user.key}~${t}`); await F.delete(`out~${t}~${user.key}`);
+        return send({ status: "none" });
+      }
+      if (act === "cancel") { await F.delete(`req~${t}~${user.key}`); await F.delete(`out~${user.key}~${t}`); return send({ status: "none" }); }
+      const unfriend = async () => {
+        for (const k of [`f~${user.key}~${t}`, `f~${t}~${user.key}`, `req~${user.key}~${t}`, `req~${t}~${user.key}`, `out~${user.key}~${t}`, `out~${t}~${user.key}`]) await F.delete(k);
+        await st("dmunread").delete(`${user.key}~${t}`); await st("dmunread").delete(`${t}~${user.key}`);
+      };
+      if (act === "remove") { await unfriend(); return send({ status: "none" }); }
+      if (body.block === true) { await unfriend(); await st("blocks").set(`${user.key}~${t}`, "1"); return send({ blocked: true }); }
+      await st("blocks").delete(`${user.key}~${t}`);
+      return send({ blocked: false });
+    }
+    const dm = path.match(/^\/dm\/([A-Za-z0-9_]{3,20})(?:\/(delete|report))?$/);
+    if (dm) {
+      const t = dm[1].toLowerCase(), act = dm[2];
+      if (t === user.key) throw new Fail(400, "That's you!");
+      if (!(await areFriends(user.key, t))) throw new Fail(403, "You can only message your friends.");
+      if (await blockedEither(user.key, t)) throw new Fail(403, "You can't message this person.");
+      const cid = convId(user.key, t), M = st("dms");
+      const allKeys = async () => (await M.list({ prefix: `${cid}~` })).blobs.map((b) => b.key).sort();
+      if (method === "GET" && !act) {
+        const after = url.searchParams.get("after") || "";
+        const keys = (await allKeys()).filter((k) => k.split("~")[2] > after).slice(-60);
+        const msgs = (await Promise.all(keys.map((k) => M.get(k, { type: "json" })))).filter(Boolean);
+        await st("dmunread").delete(`${user.key}~${t}`);
+        return send({ friend: shape(await authorNames([{ username: t }]), t), messages: msgs.map((m) => ({ id: m.id, from: m.from, text: m.text, ts: m.ts })) });
+      }
+      if (method === "POST" && !act) {
+        limit(ip + "dm", 40);
+        const text = String(body.text ?? "").trim();
+        if (!text || text.length > 1000) throw new Fail(400, "Messages must be 1–1000 characters.");
+        const ts = nextTs(), id = `${String(ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`;
+        await M.set(`${cid}~${id}`, JSON.stringify({ id, from: user.key, text, ts }));
+        const meta = JSON.stringify({ last: ts, lastFrom: user.key, preview: text.slice(0, 60) });
+        await Promise.all([st("convs").set(`${user.key}~${t}`, meta), st("convs").set(`${t}~${user.key}`, meta), st("dmunread").set(`${t}~${user.key}`, "1")]);
+        return send({ id, ts });
+      }
+      const mid = String(body.id ?? "");
+      if (method === "POST" && act && MSG_ID_RE.test(mid)) {
+        const msg = await M.get(`${cid}~${mid}`, { type: "json" });
+        if (!msg) throw new Fail(404, "That message is gone.");
+        if (act === "delete") {
+          if (msg.from !== user.key) throw new Fail(403, "You can only delete your own messages.");
+          await M.delete(`${cid}~${mid}`);
+          return send({ ok: true });
+        }
+        limit(ip + "dr", 10);
+        if (msg.from === user.key) throw new Fail(400, "You can't report your own message.");
+        const keys = await allKeys(), at = keys.indexOf(`${cid}~${mid}`);
+        const context = (await Promise.all(keys.slice(Math.max(0, at - 5), at + 1).map((k) => M.get(k, { type: "json" })))).filter(Boolean).map((m) => ({ from: m.from, text: m.text.slice(0, 200) }));
+        return send(await addReport({ type: "message", postId: cid, cid: mid, author: msg.from, text: msg.text.slice(0, 200), context }, user, body));
+      }
+    }
+    throw new Fail(404, "Not found.");
+  }
+
+  if (path === "/market" || path.startsWith("/market/")) {
+    if (!marketOn && !isDev) throw new Fail(403, "The marketplace is paused right now.");
+    if (method === "GET" && path === "/market") {
+      const mine = url.searchParams.get("mine") === "1", owned = url.searchParams.get("owned") === "1", popular = url.searchParams.get("sort") === "popular";
+      if ((mine || owned) && !user) throw new Fail(401, "Log in first.");
+      const boughtSet = user ? new Set((await st("bought").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1])) : new Set();
+      let keys;
+      if (mine) keys = (await st("lsell").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]);
+      else if (owned) keys = [...boughtSet];
+      else keys = (await st("listings").list()).blobs.map((b) => b.key);
+      keys = keys.filter((k) => !(restricted && k.includes("-t-"))).sort().slice(0, 100);
+      let items = (await Promise.all(keys.map((k) => st("listings").get(k, { type: "json" })))).filter(Boolean);
+      if (!mine && !owned) items = items.filter((l) => l.active);
+      const sc = new Map();
+      for (const b of (await st("sales").list()).blobs) { const lid = b.key.split("~")[0]; sc.set(lid, (sc.get(lid) || 0) + 1); }
+      const names = await authorNames(items, "seller");
+      let out = items.map((l) => { const nm = names.get(l.seller); return { id: l.id, title: l.title, desc: l.desc, price: l.price, rating: l.rating, preview: l.preview,
+        seller: { username: nm?.user || l.seller, displayName: nm?.name || l.seller, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true },
+        sales: sc.get(l.id) || 0, active: l.active, mine: !!user && l.seller === user.key, owned: boughtSet.has(l.id), createdAt: l.createdAt }; });
+      if (popular) out.sort((a, b) => b.sales - a.sales || (a.id < b.id ? -1 : 1));
+      return send({ listings: out.slice(0, 40), feePct: FEE_PCT });
+    }
+    if (method === "POST" && path === "/market") {
+      if (!user) throw new Fail(401, "Log in first.");
+      limit(ip + "m", 10);
+      const title = String(body.title ?? "").trim(), desc = String(body.desc ?? "").trim(), price = body.price;
+      if (!title || title.length > 60) throw new Fail(400, "Title must be 1–60 characters.");
+      if (desc.length > 200) throw new Fail(400, "Description can be up to 200 characters.");
+      if (!Number.isInteger(price) || price < 1 || price > 5000) throw new Fail(400, "Price must be a whole number from 1 to 5000.");
+      if (body.rights !== true) throw new Fail(400, "Confirm that you made this image or have the right to sell it.");
+      checkImage(body.image); checkImage(body.preview, 25000);
+      const cap = user.premium ? 100 : 40;
+      if ((await st("lsell").list({ prefix: `${user.key}~` })).blobs.length >= cap) throw new Fail(400, `You already have ${cap} listings.`);
+      const rating = "all"; // the market is for safe, all-ages images only
+      const id = postId(String(9e12 - Date.now()).padStart(13, "0"), rating, randomBytes(4).toString("hex"));
+      await st("mimages").set(id, body.image);
+      await st("listings").set(id, JSON.stringify({ id, title, desc, price, rating, seller: user.key, createdAt: Date.now(), active: true, preview: body.preview }));
+      await st("lsell").set(`${user.key}~${id}`, "1");
+      return send({ id });
+    }
+    const mm = path.match(/^\/market\/([^/]+)\/(image|buy|takedown|report)$/);
+    if (mm) {
+      const [, id, act] = mm;
+      if (!ID_RE.test(id) || (restricted && id.includes("-t-"))) throw new Fail(404, "Listing not found.");
+      const listing = await st("listings").get(id, { type: "json" });
+      if (!listing) throw new Fail(404, "Listing not found.");
+      if (!user) throw new Fail(401, "Log in first.");
+      if (act === "image" && method === "GET") {
+        const has = listing.seller === user.key || isDev || (await st("bought").get(`${user.key}~${id}`)) !== null;
+        if (!has) throw new Fail(403, "Buy this image to unlock it.");
+        const image = await st("mimages").get(id);
+        if (image === null) throw new Fail(404, "That image is no longer available.");
+        return send({ image, title: listing.title });
+      }
+      if (method === "POST" && act === "buy") {
+        if (!listing.active) throw new Fail(404, "That listing was taken down.");
+        if (listing.seller === user.key) throw new Fail(400, "You can't buy your own image.");
+        limit(ip + "b", 20);
+        if ((await st("bought").get(`${user.key}~${id}`)) !== null) return send({ ok: true, already: true });
+        const sale = await st("sales").set(`${id}~${user.key}`, JSON.stringify({ price: listing.price, ts: Date.now() }), { onlyIfNew: true });
+        if (sale?.modified !== true) {
+          if ((await st("bought").get(`${user.key}~${id}`)) !== null) return send({ ok: true, already: true });
+          throw new Fail(409, "Your purchase is still going through. Check My purchases in a moment.");
+        }
+        const sRec = await st("users").get(listing.seller, { type: "json" }), feePct = (sRec?.premiumUntil || 0) > Date.now() ? 5 : FEE_PCT; // Premium sellers keep 95%
+        const payout = listing.price - Math.floor(listing.price * feePct / 100);
+        let buyer;
+        try { buyer = await updateWallet(user.key, (w) => spend(w, listing.price, `Bought "${listing.title}"`)); }
+        catch (e) { await st("sales").delete(`${id}~${user.key}`); throw e; }
+        try { await updateWallet(listing.seller, (w) => earn(w, payout, "sale", `Sold "${listing.title}" to @${user.username}`)); }
+        catch (e) {
+          await updateWallet(user.key, (w) => earn(w, listing.price, "refund", `Refund for "${listing.title}"`)).catch(() => {});
+          await st("sales").delete(`${id}~${user.key}`);
+          throw e;
+        }
+        await st("bought").set(`${user.key}~${id}`, "1");
+        await notify(listing.seller, { type: "sale", from: user.username, displayName: user.displayName, title: listing.title, amount: payout }, listing.rating);
+        return send({ ok: true, balance: buyer.balance });
+      }
+      if (method === "POST" && act === "takedown") {
+        if (listing.seller !== user.key && !isDev) throw new Fail(403, "You can only take down your own listings.");
+        if (isDev && body.remove === true) { // hard delete, optionally refunding every buyer
+          const { blobs } = await st("sales").list({ prefix: `${id}~` });
+          for (const b of blobs) {
+            const buyerKey = b.key.split("~")[1];
+            if (body.refund === true) {
+              const sale = await st("sales").get(b.key, { type: "json" });
+              await updateWallet(buyerKey, (w) => earn(w, sale?.price || listing.price, "refund", `Refund: "${listing.title}" was removed`));
+            }
+            await st("bought").delete(`${buyerKey}~${id}`);
+            await st("sales").delete(b.key);
+          }
+          await st("mimages").delete(id); await st("listings").delete(id); await st("lsell").delete(`${listing.seller}~${id}`);
+          return send({ ok: true, removed: true });
+        }
+        await st("listings").set(id, JSON.stringify({ ...listing, active: false }));
+        return send({ ok: true });
+      }
+      if (method === "POST" && act === "report") {
+        limit(ip + "r", 10);
+        if (listing.seller === user.key) throw new Fail(400, "You can't report your own listing.");
+        return send(await addReport({ type: "listing", postId: id, title: listing.title, author: listing.seller }, user, body));
+      }
+    }
+    throw new Fail(404, "Not found.");
   }
 
   const cl = method === "GET" && path.match(/^\/posts\/([^/]+)\/comments$/);
@@ -363,7 +784,7 @@ async function route(req, context) {
     const names = await authorNames(items);
     return send({ post: { id, title: post.title, username: post.username }, comments: items.map((c) => {
       const nm = names.get(c.username.toLowerCase());
-      return { cid: c.cid, username: c.username, displayName: nm?.name || c.username, early: nm?.early === true, text: c.text, ts: c.ts };
+      return { cid: c.cid, username: c.username, displayName: nm?.name || c.username, early: nm?.early === true, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true, text: c.text, ts: c.ts };
     }) });
   }
 
@@ -385,7 +806,7 @@ async function route(req, context) {
     return send(await addReport({ type: "comment", postId: pid, cid, title: post?.title || "", author: c.username, text: c.text.slice(0, 200) }, user, body));
   }
 
-  const pm = method === "POST" && path.match(/^\/posts\/([^/]+)\/(edit|delete|like|report|comment)$/);
+  const pm = method === "POST" && path.match(/^\/posts\/([^/]+)\/(edit|delete|like|report|comment|boost|tip)$/);
   if (pm) {
     if (!user) throw new Fail(401, "Log in first.");
     const [, id, act] = pm;
@@ -403,6 +824,28 @@ async function route(req, context) {
       }
       else { await likes.delete(pk); await likes.delete(likeKey(user.key, post, id)); }
       return send({ liked: body.like === true, likes: await count("likes", `p~${id}~`) });
+    }
+
+    if (act === "tip") {
+      limit(ip + "t", 30);
+      if (mine) throw new Fail(400, "You can't tip your own post.");
+      const amt = Number(body.amount);
+      if (!TIPS.includes(amt)) throw new Fail(400, "Choose 5, 10 or 25 credits.");
+      const me2 = await updateWallet(user.key, (w) => spend(w, amt, `Tip to @${post.username}`));
+      try { await updateWallet(post.username.toLowerCase(), (w) => earn(w, amt, "tip", `Tip from @${user.username}`)); }
+      catch (e) { await updateWallet(user.key, (w) => earn(w, amt, "refund", "Tip refund")).catch(() => {}); throw e; }
+      await notify(post.username.toLowerCase(), { type: "tip", from: user.username, displayName: user.displayName, postId: id, title: post.title, amount: amt }, post.rating);
+      return send({ ok: true, balance: me2.balance });
+    }
+
+    if (act === "boost") {
+      if (!mine) throw new Fail(403, "You can only boost your own posts.");
+      if ((post.boostUntil || 0) > Date.now()) throw new Fail(409, "This post is already boosted.");
+      const w = await updateWallet(user.key, (w) => spend(w, BOOST_PRICE, "Post boost"));
+      const until = Date.now() + 864e5;
+      try { await st("posts").set(id, JSON.stringify({ ...post, boostUntil: until })); }
+      catch (e) { await updateWallet(user.key, (w) => earn(w, BOOST_PRICE, "refund", "Boost refund")).catch(() => {}); throw e; }
+      return send({ ok: true, until, balance: w.balance });
     }
 
     if (act === "comment") {
@@ -426,6 +869,7 @@ async function route(req, context) {
       await moveLikes(post, id, null, null);
       await moveComments(id, null);
       await st("images").delete(id);
+      await st("videos").delete(id);
       await st("posts").delete(id);
       return send({ ok: true });
     }
@@ -434,6 +878,7 @@ async function route(req, context) {
     limit(ip + "e", 30);
     const { t, tp, bo } = cleanPost(body);
     const rating = user.restricted ? "all" : body.rating;
+    if (body.image != null && post.hasVideo && body.removeVideo !== true) throw new Fail(400, "A post can have an image or a video, not both.");
     let image; // undefined = keep the current image
     if (body.image != null) { checkImage(body.image); image = body.image; }
     else if (body.removeImage === true) image = null;
@@ -441,13 +886,25 @@ async function route(req, context) {
     const newId = postId(ts, rating, rand);
     const data = image === undefined ? (post.hasImage ? await st("images").get(id) : null) : image;
     if (data) await st("images").set(newId, data);
-    const next = { ...post, id: newId, title: t, topic: tp, body: bo, rating, hasImage: !!data, editedAt: Date.now() };
+    const keepVideo = !!post.hasVideo && body.removeVideo !== true;
+    if (keepVideo && newId !== id) { const vb = await st("videos").get(id, { type: "arrayBuffer" }); if (vb) await st("videos").set(newId, vb); }
+    const next = { ...post, id: newId, title: t, topic: tp, body: bo, rating, hasImage: !!data, hasVideo: keepVideo, editedAt: Date.now() };
     await st("posts").set(newId, JSON.stringify(next));
-    if (newId !== id) { await st("posts").delete(id); await st("images").delete(id); }
-    else if (!data) await st("images").delete(id);
+    if (newId !== id) { await st("posts").delete(id); await st("images").delete(id); await st("videos").delete(id); }
+    else { if (!data) await st("images").delete(id); if (!keepVideo) await st("videos").delete(id); }
     if (newId !== id || tp !== post.topic) await moveLikes(post, id, next, newId);
     if (newId !== id) await moveComments(id, newId);
     return send({ id: newId });
+  }
+
+  const vm = method === "GET" && path.match(/^\/video\/([^/]+)$/);
+  if (vm) {
+    const id = vm[1];
+    if (!ID_RE.test(id) || (restricted && id.includes("-t-"))) throw new Fail(404, "Not found.");
+    const post = await st("posts").get(id, { type: "json" });
+    const buf = post?.hasVideo ? await st("videos").get(id, { type: "arrayBuffer" }) : null;
+    if (!buf) throw new Fail(404, "Not found.");
+    return new Response(buf, { headers: { "content-type": post.videoType || "video/mp4", "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" } });
   }
 
   if (method === "GET" && path.startsWith("/image/")) {
@@ -483,7 +940,9 @@ async function route(req, context) {
       user ? st("follows").get(`${user.key}~${key}`) : null,
     ]);
     return send({ username: rec.username, displayName: rec.displayName, followers, following, isFollowing: rel !== null && rel !== undefined, isDev: key === DEV,
-      bio: rec.bio || "", early: rec.createdAt < EARLY });
+      bio: rec.bio || "", early: rec.createdAt < EARLY,
+      flair: SHOP[rec.flair]?.emoji || null, color: rec.color ? rec.color.split(":")[1] : null, streak: streakInfo(await walletOf(key)).effective, premium: (rec.premiumUntil || 0) > Date.now(),
+      friend: user ? await friendStatus(user.key, key) : "none" });
   }
 
   if (method === "POST" && path === "/follow") {
@@ -550,12 +1009,13 @@ async function route(req, context) {
   if (path.startsWith("/admin/")) {
     if (!isDev) throw new Fail(403, "Only the developer can do that.");
     if (method === "GET" && path === "/admin/overview") {
-      const [ub, pb, lb, cb, rb] = await Promise.all([st("users").list(), st("posts").list(), st("likes").list({ prefix: "p~" }), st("comments").list(), st("reports").list({ prefix: "r~" })]);
+      const [ub, pb, lb, cb, rb, wb, mb, sb] = await Promise.all([st("users").list(), st("posts").list(), st("likes").list({ prefix: "p~" }), st("comments").list(), st("reports").list({ prefix: "r~" }), st("wallets").list(), st("listings").list(), st("sales").list()]);
+      const circulation = (await Promise.all(wb.blobs.slice(0, 300).map((b) => st("wallets").get(b.key, { type: "json" })))).reduce((n, w) => n + (w?.balance || 0), 0);
       const recs = (await Promise.all(ub.blobs.slice(0, 300).map((b) => st("users").get(b.key, { type: "json" })))).filter(Boolean);
       const users = recs.map((r) => ({ username: r.username, displayName: r.displayName, createdAt: r.createdAt,
-        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY })).sort((a, b) => b.createdAt - a.createdAt);
+        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now() })).sort((a, b) => b.createdAt - a.createdAt);
       return send({ counts: { users: ub.blobs.length, posts: pb.blobs.length, posts13: pb.blobs.filter((b) => b.key.includes("-t-")).length,
-        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
+        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
     }
     if (method === "POST" && path === "/admin/suspend") {
       const key = String(body.username ?? "").toLowerCase();
@@ -565,6 +1025,53 @@ async function route(req, context) {
       rec.suspended = body.suspended === true;
       await st("users").set(key, JSON.stringify(rec));
       return send({ ok: true });
+    }
+    if (method === "POST" && path === "/admin/messaging") {
+      const on = body.on === true;
+      await st("config").set("messaging", on ? "on" : "off");
+      return send({ messaging: on });
+    }
+    if (method === "POST" && path === "/admin/dm-delete") {
+      if (!CONV_RE.test(String(body.conv ?? "")) || !MSG_ID_RE.test(String(body.id ?? ""))) throw new Fail(400, "Bad request.");
+      await st("dms").delete(`${body.conv}~${body.id}`);
+      return send({ ok: true });
+    }
+    if (method === "POST" && path === "/admin/videos") {
+      const on = body.on === true;
+      await st("config").set("videos", on ? "on" : "off");
+      return send({ videos: on });
+    }
+    if (method === "POST" && path === "/admin/premium") {
+      const key = String(body.username ?? "").toLowerCase(), days = body.days;
+      if (!Number.isInteger(days) || days < 0 || days > 365) throw new Fail(400, "Days must be a whole number from 0 (remove) to 365.");
+      if (!KEY_RE.test(key) || !(await st("users").get(key))) throw new Fail(404, "No such user.");
+      const w = await updateWallet(key, (w) => { w.premiumUntil = days === 0 ? 0 : Math.max(w.premiumUntil || 0, Date.now()) + days * DAY_MS; if (days === 0) w.autoRenew = false; });
+      await mirrorPremium(key, w.premiumUntil);
+      return send({ until: w.premiumUntil });
+    }
+    if (method === "POST" && path === "/admin/update") {
+      if (body.clear === true) { await st("config").delete("update"); return send({ update: null }); }
+      const title = String(body.title ?? "").trim(), notes = Array.isArray(body.notes) ? body.notes.map((x) => String(x).trim()).filter(Boolean) : [];
+      if (!title || title.length > 60) throw new Fail(400, "Give the update a title (up to 60 characters).");
+      if (!notes.length || notes.length > 12 || notes.some((n) => n.length > 140)) throw new Fail(400, "Add 1 to 12 bullet points, each up to 140 characters.");
+      const update = { id: String(Date.now()), title, notes, ts: Date.now() };
+      await st("config").set("update", JSON.stringify(update));
+      return send({ update });
+    }
+    if (method === "POST" && path === "/admin/market") {
+      const on = body.on === true;
+      await st("config").set("market", on ? "on" : "off");
+      return send({ market: on });
+    }
+    if (method === "POST" && path === "/admin/credits") {
+      const key = String(body.username ?? "").toLowerCase(), amt = body.amount;
+      if (!Number.isInteger(amt) || amt === 0 || Math.abs(amt) > 5000) throw new Fail(400, "Amount must be a whole number from -5000 to 5000 (not 0).");
+      if (!KEY_RE.test(key) || !(await st("users").get(key))) throw new Fail(404, "No such user.");
+      const w = await updateWallet(key, (w) => {
+        if (w.balance + amt < 0) throw new Fail(400, "That would take the balance below zero.");
+        w.balance += amt; addLog(w, "dev", amt, String(body.note || "Adjustment by the dev").slice(0, 60));
+      });
+      return send({ balance: w.balance });
     }
     if (method === "GET" && path === "/admin/reports") {
       const keys = (await st("reports").list({ prefix: "r~" })).blobs.map((b) => b.key).sort().slice(0, 50);

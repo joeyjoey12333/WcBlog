@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>Restore · Weather Co Blog</title>
+<style>
+body{margin:0;background:#0f2940;color:#e7eff7;font:17px/1.6 system-ui,sans-serif;display:grid;place-items:start center;min-height:100vh;padding:24px}
+main{background:#fff;color:#14283c;border-radius:16px;padding:24px 28px;max-width:640px;width:100%}
+h1{margin:0 0 8px;font:700 28px Georgia,serif}label{display:block;margin:14px 0 4px;font-weight:600}
+input[type=file],input[type=password],input[type=text]{width:100%;padding:9px 12px;border:1px solid #c9d8e4;border-radius:10px;font:inherit}
+button{margin-top:16px;border:0;border-radius:99px;padding:10px 22px;background:#f5a623;color:#10283f;font:700 1rem system-ui;cursor:pointer}button:disabled{opacity:.55}
+pre{background:#f1f6fb;border-radius:10px;padding:12px;white-space:pre-wrap;min-height:60px;max-height:320px;overflow:auto;font-size:.9rem}
+.warn{background:#fff3d6;border-left:5px solid #f5a623;padding:10px 14px;border-radius:8px}
+</style></head><body><main>
+<h1>Restore Weather Co Blog</h1>
+<p class="warn">For emergencies: use this if the site lost its data and nobody can log in. You need your backup file (from the Dev panel's <b>Download backup</b>) and your <b>developer code</b>. The backup holds password hashes and private messages, so keep it private.</p>
+<label for="f">Backup file</label><input type="file" id="f" accept=".json,application/json">
+<label for="code">Developer code</label><input type="password" id="code" autocomplete="off">
+<label><input type="checkbox" id="over"> Replace records that already exist (leave this off to only fill in what's missing)</label>
+<label for="typed">Type RESTORE to confirm</label><input type="text" id="typed" autocomplete="off">
+<button id="go">Restore</button>
+<pre id="log" aria-live="polite">Waiting for a backup file…</pre>
+<p><a href="/">Back to the site</a></p>
+<script>
+const $=s=>document.querySelector(s),log=m=>{$("#log").textContent+=(m+"\n");$("#log").scrollTop=1e9};
+$("#go").onclick=async()=>{
+  const f=$("#f").files[0],code=$("#code").value;$("#log").textContent="";
+  if(!f)return log("Choose your backup file first.");if(!code)return log("Enter your developer code.");if($("#typed").value.trim()!=="RESTORE")return log("Type RESTORE in the box to confirm.");
+  let data;try{data=JSON.parse(await f.text())}catch{return log("That file couldn't be read. Is it the backup .json file?")}
+  if(!data||data.app!=="wc-blog"||!data.stores)return log("That doesn't look like a WC Blog backup.");
+  $("#go").disabled=true;let written=0,skipped=0,bad=0;
+  try{
+    for(const [name,entries] of Object.entries(data.stores)){
+      log(`Restoring ${name} (${entries.length} records)…`);
+      for(let i=0;i<entries.length;){
+        const chunk=[];let size=0;
+        while(i<entries.length&&chunk.length<150&&(chunk.length===0||size+entries[i].v.length<3000000)){size+=entries[i].v.length;chunk.push(entries[i++])}
+        const r=await fetch("/api/admin/restore",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({store:name,entries:chunk,overwrite:$("#over").checked,devCode:code})});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(d.error||("Server said "+r.status));
+        written+=d.written;skipped+=d.skipped;bad+=d.bad;
+      }
+    }
+    log(`\nDone. ${written} records restored, ${skipped} already existed, ${bad} couldn't be used.\nNow go to the site and log in with your normal account.`);
+  }catch(e){log("\nStopped: "+e.message)}
+  $("#go").disabled=false};
+</script></main></body></html>

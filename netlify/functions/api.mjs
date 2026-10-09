@@ -45,16 +45,17 @@ const view = (key, rec) => {
     restricted: age < 13 || rec.restricted === true, theme: rec.theme || null,
     bio: rec.bio || "", early: rec.createdAt < EARLY, mustChange: rec.mustChange === true,
     flair: SHOP[rec.flair]?.emoji || null, color: rec.color ? rec.color.split(":")[1] : null,
-    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false };
+    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false, halloween: (rec.halloweenClaimed || 0) > 0,
+    halloweenOk: (rec.halloweenClaimed || 0) > 0 && (Date.now() < HW_END || (rec.premiumUntil || 0) > Date.now()) };
 };
-const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, isDev: u.key === DEV });
+const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, halloween: u.halloween, halloweenOk: u.halloweenOk, isDev: u.key === DEV });
 
 const getUser = async (token) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
   const s = await st("sessions").get(token, { type: "json" });
   if (!s || Date.now() - s.t > 30 * 864e5) return null;
   const u = await st("users").get(s.u, { type: "json" });
-  if (!u || u.suspended || (u.validAfter && s.t < u.validAfter)) return null;
+  if (!u || u.suspended || u.deleted || (u.validAfter && s.t < u.validAfter)) return null;
   return view(s.u, u);
 };
 const newSession = async (key) => {
@@ -116,9 +117,14 @@ const SHOP = {
   "flair:snow": { name: "Snowflake badge", price: 75, kind: "flair", emoji: "❄️" },
   "flair:rainbow": { name: "Rainbow badge", price: 75, kind: "flair", emoji: "🌈" },
   "flair:tornado": { name: "Tornado badge", price: 75, kind: "flair", emoji: "🌪️" },
+  "flair:pumpkin": { name: "Pumpkin badge (Halloween exclusive)", price: 0, kind: "flair", emoji: "🎃", event: true },
+  "flair:ghost": { name: "Ghost Hunter badge (find every Halloween secret)", price: 0, kind: "flair", emoji: "👻", event: true },
 };
 for (const [k, i] of Object.entries(SHOP)) i.section = k === "freeze" ? "wcd" : "style"; // shop sections: WCD / Style
 const DAY_MS = 864e5, PREMIUM_PRICE = 200, PREMIUM_DAYS = 30, VIDEO_MAX = 3.5 * 1024 * 1024;
+// Halloween: free for everyone to claim during the event; after October 31 (US Eastern) only Premium members can claim or use it.
+const HW_END = Date.UTC(2026, 10, 1, 4, 0, 0);
+const HW_SECRETS = ["spider", "cobweb", "moon", "brand", "konami", "boo", "treat", "trick", "witching", "haunted"];
 const premiumActive = (w) => (w.premiumUntil || 0) > Date.now();
 const freezeCap = (w) => (premiumActive(w) ? 5 : 3);
 const newWallet = () => ({ balance: 0, streak: 0, best: 0, lastDay: null, freezes: 0, owned: [], log: [] });
@@ -211,6 +217,116 @@ async function friendStatus(me, other) {
   return "none";
 }
 
+// ---------- saved rate limits (shared by every server instance), word filter, activity ----------
+async function hitLimit(kind, id, max, windowMs) {
+  const s = st("ratelimit"), key = `${kind}~${id}`.slice(0, 120);
+  for (let i = 0; i < 8; i++) {
+    const cur = await s.getWithMetadata(key, { type: "json" }), now = Date.now();
+    let rec = cur?.data;
+    if (!rec || now - rec.start > windowMs) rec = { n: 0, start: now };
+    if (rec.n >= max) throw new Fail(429, `Too many attempts. Please try again in ${Math.max(1, Math.ceil((rec.start + windowMs - now) / 60000))} minute(s).`);
+    rec.n += 1;
+    const r = cur ? await s.set(key, JSON.stringify(rec), { onlyIfMatch: cur.etag }) : await s.set(key, JSON.stringify(rec), { onlyIfNew: true });
+    if (r?.modified === true) return;
+    await new Promise((res) => setTimeout(res, 5 + Math.random() * 25));
+  }
+  throw new Fail(429, "Too many attempts. Please try again in a minute."); // under heavy contention, fail closed
+}
+const clearHits = (kind, id) => st("ratelimit").delete(`${kind}~${id}`.slice(0, 120));
+
+let wfCache = { at: 0, data: { words: [], mode: "block" } };
+const lower = (t) => String(t).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const plain = (t) => " " + lower(t).replace(/[^a-z0-9]+/g, " ").trim() + " ";
+const LEET = { 0: "o", 1: "i", 3: "e", 4: "a", 5: "s", 7: "t", 8: "b", "@": "a", $: "s" };
+const leet = (t) => " " + lower(t).replace(/[0134578@$]/g, (c) => LEET[c]).replace(/[^a-z0-9]+/g, " ").trim() + " ";
+async function getFilter() {
+  if (Date.now() - wfCache.at < 30000) return wfCache.data;
+  const d = await st("config").get("wordfilter", { type: "json" });
+  wfCache = { at: Date.now(), data: d && Array.isArray(d.words) ? d : { words: [], mode: "block" } };
+  return wfCache.data;
+}
+async function checkWords(who, where, ...texts) { // whole-word match, ignoring case, accents, punctuation and number-for-letter swaps
+  const f = await getFilter();
+  if (!f.words.length) return;
+  const hays = texts.flatMap((t) => [plain(t), leet(t)]);
+  const hit = f.words.find((w) => hays.some((h) => h.includes(" " + w + " ")));
+  if (!hit) return;
+  if (f.mode === "flag") {
+    const ts = Date.now();
+    await st("reports").set(`r~${String(9e12 - ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`,
+      JSON.stringify({ type: "filtered", where, author: who, by: "word filter", reason: "filter", note: `matched "${hit}"`, text: texts.join(" ").slice(0, 200), ts }));
+    return;
+  }
+  throw new Fail(400, "That contains a word that isn't allowed on WC Blog. Please change it and try again.");
+}
+const seenActive = new Set();
+async function markActive(key) { // one tiny write per person per day, for the "active users" chart
+  const k = `${dayKey()}~${key}`;
+  if (seenActive.has(k)) return;
+  if (seenActive.size > 5000) seenActive.clear();
+  seenActive.add(k);
+  await st("active").set(k, "1");
+}
+const shiftDay = (k, n) => new Date(Date.parse(k + "T00:00:00Z") - n * 864e5).toISOString().slice(0, 10);
+
+async function removeListing(id, listing, refund) { // deletes a listing for good; optionally gives every buyer their credits back
+  const { blobs } = await st("sales").list({ prefix: `${id}~` });
+  for (const b of blobs) {
+    const buyerKey = b.key.split("~")[1];
+    if (refund) {
+      const sale = await st("sales").get(b.key, { type: "json" });
+      await updateWallet(buyerKey, (w) => earn(w, sale?.price || listing.price, "refund", `Refund: "${listing.title}" was removed`));
+    }
+    await st("bought").delete(`${buyerKey}~${id}`); await st("sales").delete(b.key);
+  }
+  await st("mimages").delete(id); await st("listings").delete(id); await st("lsell").delete(`${listing.seller}~${id}`);
+}
+
+// Erases a person's content and personal data. The username stays reserved so nobody else can ever take it over.
+async function eraseUser(un) {
+  const rec = await st("users").get(un, { type: "json" });
+  if (!rec) return false;
+  const P = st("posts");
+  for (const b of (await P.list()).blobs.slice(0, 5000)) {
+    const post = await P.get(b.key, { type: "json" });
+    if (post && post.username.toLowerCase() === un) {
+      await moveLikes(post, b.key, null, null); await moveComments(b.key, null);
+      await st("images").delete(b.key); await st("videos").delete(b.key); await P.delete(b.key);
+    }
+  }
+  const C = st("comments");
+  for (const b of (await C.list()).blobs.slice(0, 20000)) { const c = await C.get(b.key, { type: "json" }); if (c && c.username.toLowerCase() === un) await C.delete(b.key); }
+  const L = st("likes");
+  for (const b of (await L.list({ prefix: "p~" })).blobs) if (b.key.split("~")[2] === un) await L.delete(b.key);
+  for (const b of (await L.list({ prefix: `u~${un}~` })).blobs) await L.delete(b.key);
+  for (const b of (await st("follows").list({ prefix: `${un}~` })).blobs) { await st("followers").delete(`${b.key.split("~")[1]}~${un}`); await st("follows").delete(b.key); }
+  for (const b of (await st("followers").list({ prefix: `${un}~` })).blobs) { await st("follows").delete(`${b.key.split("~")[1]}~${un}`); await st("followers").delete(b.key); }
+  const F = st("friends");
+  for (const b of (await F.list({ prefix: `f~${un}~` })).blobs) {
+    const other = b.key.split("~")[2];
+    for (const m of (await st("dms").list({ prefix: `${convId(un, other)}~` })).blobs) await st("dms").delete(m.key);
+    await F.delete(`f~${other}~${un}`); await F.delete(b.key);
+    for (const k of [`${un}~${other}`, `${other}~${un}`]) { await st("convs").delete(k); await st("dmunread").delete(k); }
+  }
+  for (const b of (await F.list({ prefix: `req~${un}~` })).blobs) { await F.delete(`out~${b.key.split("~")[2]}~${un}`); await F.delete(b.key); }
+  for (const b of (await F.list({ prefix: `out~${un}~` })).blobs) { await F.delete(`req~${b.key.split("~")[2]}~${un}`); await F.delete(b.key); }
+  for (const b of (await st("blocks").list({ prefix: `${un}~` })).blobs) await st("blocks").delete(b.key);
+  for (const b of (await st("lsell").list({ prefix: `${un}~` })).blobs) {
+    const id = b.key.split("~")[1], l = await st("listings").get(id, { type: "json" });
+    if (l) await removeListing(id, l, true); else await st("lsell").delete(b.key);
+  }
+  for (const b of (await st("bought").list({ prefix: `${un}~` })).blobs) { await st("sales").delete(`${b.key.split("~")[1]}~${un}`); await st("bought").delete(b.key); }
+  for (const b of (await st("notifs").list({ prefix: `${un}~` })).blobs) await st("notifs").delete(b.key);
+  for (const b of (await st("active").list()).blobs) if (b.key.endsWith(`~${un}`)) await st("active").delete(b.key);
+  for (const b of (await st("hwsecrets").list({ prefix: `${un}~` })).blobs) await st("hwsecrets").delete(b.key);
+  await st("wallets").delete(un); await st("avatars").delete(un);
+  await st("users").set(un, JSON.stringify({ username: rec.username, displayName: "Deleted user", pass: "x:x", birthdate: "1900-01-01", createdAt: rec.createdAt, deleted: true }));
+  return true;
+}
+const BACKUP_STORES = ["users", "wallets", "posts", "comments", "likes", "follows", "followers", "friends", "blocks", "dms", "convs", "dmunread", "notifs", "reports", "listings", "sales", "bought", "lsell", "images", "mimages", "videos", "avatars", "config", "active", "hwsecrets"];
+const JSON_STORES = new Set(["users", "wallets", "posts", "comments", "dms", "convs", "notifs", "reports", "listings"]);
+const IMAGE_STORES = new Set(["images", "mimages", "avatars"]);
+
 async function notify(toKey, n, rating) {
   const ts = Date.now();
   await st("notifs").set(`${toKey}~${String(9e12 - ts).padStart(13, "0")}-${rating === "13+" ? "t" : "a"}-${randomBytes(4).toString("hex")}`, JSON.stringify({ ...n, ts }));
@@ -252,24 +368,25 @@ async function route(req, context) {
   let body = {};
   if (method === "POST") {
     const raw = await req.text();
-    if (raw.length > (path === "/posts" ? 5300000 : 1500000)) throw new Fail(413, "That upload is too large.");
+    if (raw.length > (path === "/posts" || path === "/admin/restore" ? 5300000 : 1500000)) throw new Fail(413, "That upload is too large.");
     try { body = raw ? JSON.parse(raw) : {}; } catch { throw new Fail(400, "Bad request."); }
     if (!body || typeof body !== "object") body = {};
   }
   const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
   const user = token ? await getUser(token) : null;
   const isDev = !!user && user.key === DEV;
-  const [m, siteRaw, mk, vk, upd, ck] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging")]);
-  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off";
-  if (maint && !isDev && !["/status", "/login", "/me", "/logout", "/dev-recover"].includes(path))
+  const [m, siteRaw, mk, vk, upd, ck, hk] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging"), st("config").get("halloween")]);
+  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off", halloweenOn = hk === "on";
+  if (maint && !isDev && !["/status", "/login", "/me", "/logout", "/dev-recover", "/admin/restore"].includes(path))
     throw new Fail(503, "WC Blog is in scheduled maintenance.", { maintenance: true, message: site.msg || "", until: site.until || "" });
   const ip = context?.ip || "unknown";
+  if (user) await markActive(user.key);
 
   if (method === "GET" && path === "/status")
-    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, update: upd || null });
+    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, halloween: halloweenOn, halloweenEnds: HW_END, update: upd || null });
 
   if (method === "POST" && path === "/signup") {
-    limit(ip + "s", 10);
+    await hitLimit("signup-ip", ip, 10, 60 * 60e3);
     const u = String(body.username ?? "").trim(), dn = String(body.displayName ?? "").trim(), b = String(body.birthdate ?? "");
     const pw = body.password;
     if (!/^[A-Za-z0-9_]{3,20}$/.test(u)) throw new Fail(400, "Username must be 3–20 letters, numbers or underscores.");
@@ -278,6 +395,8 @@ async function route(req, context) {
     const bd = /^\d{4}-\d{2}-\d{2}$/.test(b) ? new Date(b + "T00:00:00Z") : null;
     if (!bd || isNaN(bd) || bd.toISOString().slice(0, 10) !== b || bd > new Date() || bd.getUTCFullYear() < 1900)
       throw new Fail(400, "Enter a valid birthdate.");
+    if (ageOf(b) < 13 && body.parentOk !== true) throw new Fail(400, "Please ask a parent or guardian first, then tick the box that says they know you're joining.");
+    await checkWords(u, "name", u, dn);
     const key = u.toLowerCase();
     if (key === DEV && (!process.env.DEV_CODE || body.devCode !== process.env.DEV_CODE))
       throw new Fail(403, "That username is reserved.");
@@ -292,12 +411,15 @@ async function route(req, context) {
   }
 
   if (method === "POST" && path === "/login") {
-    limit(ip + "l", 10);
     const key = String(body.username ?? "").trim().toLowerCase();
+    // Saved attempt counters: they hold across every server instance, per address and per account.
+    await hitLimit("login-ip", ip, 25, 15 * 60e3);
+    if (KEY_RE.test(key)) await hitLimit("login-user", key, 10, 15 * 60e3);
     const rec = KEY_RE.test(key) ? await st("users").get(key, { type: "json" }) : null;
-    if (!rec || typeof body.password !== "string" || !(await verify(body.password, rec.pass)))
+    if (!rec || rec.deleted || typeof body.password !== "string" || !(await verify(body.password, rec.pass)))
       throw new Fail(401, "Wrong username or password.");
     if (rec.suspended) throw new Fail(403, "This account has been suspended.");
+    await clearHits("login-user", key);
     if (maint && key !== DEV) throw new Fail(503, "WC Blog is in scheduled maintenance.", { maintenance: true, message: site.msg || "", until: site.until || "" });
     const t = await newSession(key);
     return send({ token: t, user: pub(view(key, rec)) });
@@ -314,7 +436,8 @@ async function route(req, context) {
   }
 
   if (method === "POST" && path === "/dev-recover") {
-    limit(ip + "d", 5);
+    await hitLimit("recover-ip", ip, 5, 15 * 60e3);
+    await hitLimit("recover-all", "all", 20, 60 * 60e3); // and a global cap, so rotating addresses can't be used to guess the code
     const code = process.env.DEV_CODE;
     if (!code || typeof body.devCode !== "string" || !same(body.devCode, code)) throw new Fail(403, "That developer code isn't right.");
     if (typeof body.password !== "string" || body.password.length < 8 || body.password.length > 100) throw new Fail(400, "Password must be 8–100 characters.");
@@ -333,8 +456,9 @@ async function route(req, context) {
     if (!user) throw new Fail(401, "Log in first.");
     const rec = await st("users").get(user.key, { type: "json" });
     if (body.theme !== undefined) {
-      if (!["light", "blue", "dark", "weather"].includes(body.theme)) throw new Fail(400, "Unknown theme.");
+      if (!["light", "blue", "dark", "weather", "halloween"].includes(body.theme)) throw new Fail(400, "Unknown theme.");
       if (body.theme === "weather" && !user.premium) throw new Fail(403, "Weather Mode is a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
+      if (body.theme === "halloween" && !user.halloweenOk) throw new Fail(403, user.halloween ? "After October 31, the Halloween theme is only for Premium members." : "Claim the Halloween theme first (it shows up as a pop-up during the event).");
       rec.theme = body.theme;
     }
     if (body.restricted !== undefined) {
@@ -345,11 +469,13 @@ async function route(req, context) {
     if (body.displayName !== undefined) {
       const dn = String(body.displayName).trim();
       if (dn.length < 1 || dn.length > 30) throw new Fail(400, "Display name must be 1–30 characters.");
+      await checkWords(user.username, "name", dn);
       rec.displayName = dn;
     }
     if (body.bio !== undefined) {
       const bio = String(body.bio).trim();
       if (bio.length > 160) throw new Fail(400, "Your bio can be up to 160 characters.");
+      await checkWords(user.username, "bio", bio);
       rec.bio = bio;
     }
     if (body.friendRequests !== undefined) {
@@ -371,6 +497,16 @@ async function route(req, context) {
     rec.validAfter = Date.now(); // signs out every other device
     await st("users").set(user.key, JSON.stringify(rec));
     return send({ token: await newSession(user.key) });
+  }
+
+  if (method === "POST" && path === "/account/delete") {
+    if (!user) throw new Fail(401, "Log in first.");
+    limit(ip + "x", 5);
+    if (user.key === DEV) throw new Fail(400, "The developer account can't be deleted this way.");
+    const rec = await st("users").get(user.key, { type: "json" });
+    if (typeof body.password !== "string" || !(await verify(body.password, rec.pass))) throw new Fail(403, "That password isn't right.");
+    await eraseUser(user.key);
+    return send({ ok: true });
   }
 
   if (method === "POST" && path === "/account/logout-all") {
@@ -439,6 +575,7 @@ async function route(req, context) {
     if (!user) throw new Fail(401, "Log in to post.");
     limit(ip + "p", 20);
     const { t, tp, bo } = cleanPost(body);
+    await checkWords(user.username, "post", t, tp, bo);
     const image = body.image ?? null;
     if (image !== null) checkImage(image);
     let vid = null;
@@ -481,6 +618,40 @@ async function route(req, context) {
     return send({ items, unread });
   }
 
+  if (method === "GET" && path === "/halloween/secrets") {
+    if (!user) throw new Fail(401, "Log in first.");
+    return send({ found: (await st("hwsecrets").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]), total: HW_SECRETS.length });
+  }
+  if (method === "POST" && path === "/halloween/secret") {
+    if (!user) throw new Fail(401, "Log in first.");
+    limit(ip + "hs", 60);
+    if (!user.halloweenOk) throw new Fail(403, "Unlock the Halloween theme to hunt for secrets.");
+    const id = String(body.id ?? "");
+    if (!HW_SECRETS.includes(id)) throw new Fail(400, "Unknown secret.");
+    const r = await st("hwsecrets").set(`${user.key}~${id}`, "1", { onlyIfNew: true });
+    const found = (await st("hwsecrets").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]);
+    let badge = false;
+    if (HW_SECRETS.every((x) => found.includes(x))) {
+      await updateWallet(user.key, (w) => { badge = false; if (w.owned.includes("flair:ghost")) return; w.owned.push("flair:ghost"); badge = true; });
+    }
+    return send({ id, isNew: r?.modified === true, found, total: HW_SECRETS.length, complete: found.length === HW_SECRETS.length, badge });
+  }
+  if (method === "POST" && path === "/halloween/claim") {
+    if (!user) throw new Fail(401, "Log in to claim it.");
+    if (!user.halloween) {
+      const after = Date.now() >= HW_END;
+      if (after ? !user.premium : !halloweenOn) throw new Fail(403, after ? "After October 31, the Halloween theme is only for Premium members." : "The Halloween event isn't open right now.");
+    }
+    let gift = false;
+    await updateWallet(user.key, (w) => { // the wallet is the gate, so a double-click can never pay twice
+      gift = false;
+      if (w.owned.includes("flair:pumpkin")) return;
+      w.owned.push("flair:pumpkin"); earn(w, 31, "event", "Halloween gift 🎃"); gift = true;
+    });
+    const rec = await st("users").get(user.key, { type: "json" });
+    if (!rec.halloweenClaimed) { rec.halloweenClaimed = Date.now(); await st("users").set(user.key, JSON.stringify(rec)); }
+    return send({ user: pub(view(user.key, rec)), gift });
+  }
   if (path === "/wallet/top" && method === "GET") {
     const keys = (await st("wallets").list()).blobs.map((b) => b.key).slice(0, 300);
     const rows = (await Promise.all(keys.map(async (k) => ({ username: k, w: await st("wallets").get(k, { type: "json" }) }))))
@@ -511,7 +682,7 @@ async function route(req, context) {
     }
     if (method === "GET" && path === "/shop") {
       const [w, rec] = await Promise.all([walletOf(user.key), st("users").get(user.key, { type: "json" })]);
-      return send({ items: Object.entries(SHOP).map(([id, i]) => ({ id, name: i.name, price: i.price, kind: i.kind, section: i.section, emoji: i.emoji || null })),
+      return send({ items: Object.entries(SHOP).map(([id, i]) => ({ id, name: i.name, price: i.price, kind: i.kind, section: i.section, event: !!i.event, emoji: i.emoji || null })),
         freezeCap: freezeCap(w), premium: walletView(w).premium,
         owned: w.owned, freezes: w.freezes, boostPrice: BOOST_PRICE, tips: TIPS, equipped: { color: rec.color || null, flair: rec.flair || null } });
     }
@@ -520,6 +691,7 @@ async function route(req, context) {
       const id = String(body.item ?? "");
       if (!Object.hasOwn(SHOP, id)) throw new Fail(404, "Unknown item.");
       const it = SHOP[id];
+      if (it.event) throw new Fail(403, "That's an event exclusive. You can only get it by claiming it during the event.");
       const w = await updateWallet(user.key, (w) => {
         if (it.kind === "freeze") { const cap = freezeCap(w); if (w.freezes >= cap) throw new Fail(409, `You can hold up to ${cap} Streak Freezes.`); }
         else if (w.owned.includes(id)) throw new Fail(409, "You already own that.");
@@ -582,7 +754,7 @@ async function route(req, context) {
       if (!t) throw new Fail(404, "We couldn't find that person.");
       if (t === user.key) throw new Fail(400, "That's you!");
       const rec = await st("users").get(t, { type: "json" });
-      if (!rec || rec.suspended) throw new Fail(404, "We couldn't find that person.");
+      if (!rec || rec.suspended || rec.deleted) throw new Fail(404, "We couldn't find that person.");
       if (act === "request") {
         limit(ip + "fr", 20);
         if (await areFriends(user.key, t)) throw new Fail(409, "You're already friends.");
@@ -641,6 +813,7 @@ async function route(req, context) {
         limit(ip + "dm", 40);
         const text = String(body.text ?? "").trim();
         if (!text || text.length > 1000) throw new Fail(400, "Messages must be 1–1000 characters.");
+        await checkWords(user.username, "message", text);
         const ts = nextTs(), id = `${String(ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`;
         await M.set(`${cid}~${id}`, JSON.stringify({ id, from: user.key, text, ts }));
         const meta = JSON.stringify({ last: ts, lastFrom: user.key, preview: text.slice(0, 60) });
@@ -696,6 +869,7 @@ async function route(req, context) {
       if (desc.length > 200) throw new Fail(400, "Description can be up to 200 characters.");
       if (!Number.isInteger(price) || price < 1 || price > 5000) throw new Fail(400, "Price must be a whole number from 1 to 5000.");
       if (body.rights !== true) throw new Fail(400, "Confirm that you made this image or have the right to sell it.");
+      await checkWords(user.username, "listing", title, desc);
       checkImage(body.image); checkImage(body.preview, 25000);
       const cap = user.premium ? 100 : 40;
       if ((await st("lsell").list({ prefix: `${user.key}~` })).blobs.length >= cap) throw new Fail(400, `You already have ${cap} listings.`);
@@ -748,17 +922,7 @@ async function route(req, context) {
       if (method === "POST" && act === "takedown") {
         if (listing.seller !== user.key && !isDev) throw new Fail(403, "You can only take down your own listings.");
         if (isDev && body.remove === true) { // hard delete, optionally refunding every buyer
-          const { blobs } = await st("sales").list({ prefix: `${id}~` });
-          for (const b of blobs) {
-            const buyerKey = b.key.split("~")[1];
-            if (body.refund === true) {
-              const sale = await st("sales").get(b.key, { type: "json" });
-              await updateWallet(buyerKey, (w) => earn(w, sale?.price || listing.price, "refund", `Refund: "${listing.title}" was removed`));
-            }
-            await st("bought").delete(`${buyerKey}~${id}`);
-            await st("sales").delete(b.key);
-          }
-          await st("mimages").delete(id); await st("listings").delete(id); await st("lsell").delete(`${listing.seller}~${id}`);
+          await removeListing(id, listing, body.refund === true);
           return send({ ok: true, removed: true });
         }
         await st("listings").set(id, JSON.stringify({ ...listing, active: false }));
@@ -852,6 +1016,7 @@ async function route(req, context) {
       limit(ip + "c", 30);
       const text = String(body.text ?? "").trim();
       if (!text || text.length > 500) throw new Fail(400, "Comments must be 1–500 characters.");
+      await checkWords(user.username, "comment", text);
       const cid = `${String(Date.now()).padStart(13, "0")}-${randomBytes(4).toString("hex")}`;
       await st("comments").set(`${id}~${cid}`, JSON.stringify({ cid, postId: id, username: user.username, text, ts: Date.now() }));
       if (!mine) await notify(post.username.toLowerCase(), { type: "comment", from: user.username, displayName: user.displayName, postId: id, title: post.title }, post.rating);
@@ -877,6 +1042,7 @@ async function route(req, context) {
     if (!mine) throw new Fail(403, "You can only edit your own posts.");
     limit(ip + "e", 30);
     const { t, tp, bo } = cleanPost(body);
+    await checkWords(user.username, "post", t, tp, bo);
     const rating = user.restricted ? "all" : body.rating;
     if (body.image != null && post.hasVideo && body.removeVideo !== true) throw new Fail(400, "A post can have an image or a video, not both.");
     let image; // undefined = keep the current image
@@ -934,7 +1100,7 @@ async function route(req, context) {
   if (prm) {
     const key = prm[1].toLowerCase();
     const rec = await st("users").get(key, { type: "json" });
-    if (!rec) throw new Fail(404, "We couldn't find that person.");
+    if (!rec || rec.deleted) throw new Fail(404, "We couldn't find that person.");
     const [followers, following, rel] = await Promise.all([
       count("followers", `${key}~`), count("follows", `${key}~`),
       user ? st("follows").get(`${user.key}~${key}`) : null,
@@ -1007,15 +1173,23 @@ async function route(req, context) {
   }
 
   if (path.startsWith("/admin/")) {
-    if (!isDev) throw new Fail(403, "Only the developer can do that.");
+    // Restoring a backup also works with the developer code alone, for the day the accounts themselves are gone and nobody can log in.
+    const restoreAuth = method === "POST" && path === "/admin/restore" && !isDev && typeof body.devCode === "string" && !!process.env.DEV_CODE && same(body.devCode, process.env.DEV_CODE);
+    if (!isDev && !restoreAuth) {
+      if (path === "/admin/restore" && typeof body.devCode === "string") { // only wrong guesses count against the limits
+        await hitLimit("recover-ip", ip, 5, 15 * 60e3);
+        await hitLimit("recover-all", "all", 20, 60 * 60e3);
+      }
+      throw new Fail(403, "Only the developer can do that.");
+    }
     if (method === "GET" && path === "/admin/overview") {
       const [ub, pb, lb, cb, rb, wb, mb, sb] = await Promise.all([st("users").list(), st("posts").list(), st("likes").list({ prefix: "p~" }), st("comments").list(), st("reports").list({ prefix: "r~" }), st("wallets").list(), st("listings").list(), st("sales").list()]);
       const circulation = (await Promise.all(wb.blobs.slice(0, 300).map((b) => st("wallets").get(b.key, { type: "json" })))).reduce((n, w) => n + (w?.balance || 0), 0);
       const recs = (await Promise.all(ub.blobs.slice(0, 300).map((b) => st("users").get(b.key, { type: "json" })))).filter(Boolean);
       const users = recs.map((r) => ({ username: r.username, displayName: r.displayName, createdAt: r.createdAt,
-        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now() })).sort((a, b) => b.createdAt - a.createdAt);
+        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now(), halloween: !!r.halloweenClaimed })).sort((a, b) => b.createdAt - a.createdAt);
       return send({ counts: { users: ub.blobs.length, posts: pb.blobs.length, posts13: pb.blobs.filter((b) => b.key.includes("-t-")).length,
-        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
+        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, halloween: users.filter((u) => u.halloween).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
     }
     if (method === "POST" && path === "/admin/suspend") {
       const key = String(body.username ?? "").toLowerCase();
@@ -1025,6 +1199,83 @@ async function route(req, context) {
       rec.suspended = body.suspended === true;
       await st("users").set(key, JSON.stringify(rec));
       return send({ ok: true });
+    }
+    if (method === "POST" && path === "/admin/prune") { // clears out old security counters and expired login sessions
+      const now = Date.now(); let rl = 0, sess = 0;
+      for (const b of (await st("ratelimit").list()).blobs) { const r = await st("ratelimit").get(b.key, { type: "json" }); if (!r || now - r.start > 864e5) { await st("ratelimit").delete(b.key); rl += 1; } }
+      for (const b of (await st("sessions").list()).blobs) { const x = await st("sessions").get(b.key, { type: "json" }); if (!x || now - x.t > 30 * 864e5) { await st("sessions").delete(b.key); sess += 1; } }
+      return send({ ratelimit: rl, sessions: sess });
+    }
+    if (method === "POST" && path === "/admin/halloween") {
+      const on = body.on === true;
+      await st("config").set("halloween", on ? "on" : "off");
+      return send({ halloween: on });
+    }
+    if (method === "GET" && path === "/admin/wordfilter") { const f = await getFilter(); return send({ words: f.words, mode: f.mode }); }
+    if (method === "POST" && path === "/admin/wordfilter") {
+      const mode = body.mode === "flag" ? "flag" : "block";
+      const words = [...new Set((Array.isArray(body.words) ? body.words : []).map((w) => plain(w).trim()).filter(Boolean))];
+      if (words.length > 500) throw new Fail(400, "That's more than 500 words.");
+      if (words.some((w) => !/^[a-z0-9 ]{2,30}$/.test(w))) throw new Fail(400, "Each word or phrase must be 2 to 30 letters or numbers.");
+      const data = { words, mode };
+      await st("config").set("wordfilter", JSON.stringify(data));
+      wfCache = { at: Date.now(), data };
+      return send(data);
+    }
+    if (method === "POST" && path === "/admin/erase") {
+      const key = String(body.username ?? "").toLowerCase();
+      if (key === DEV) throw new Fail(400, "You can't erase the developer account.");
+      if (!KEY_RE.test(key) || !(await eraseUser(key))) throw new Fail(404, "No such user.");
+      return send({ ok: true });
+    }
+    if (method === "GET" && path === "/admin/growth") {
+      const days = Math.min(90, Math.max(7, parseInt(url.searchParams.get("days") || "30", 10) || 30)), today = dayKey();
+      const labels = Array.from({ length: days }, (_, i) => shiftDay(today, days - 1 - i)), idx = new Map(labels.map((k, i) => [k, i]));
+      const series = Object.fromEntries(["signups", "active", "posts", "comments", "messages"].map((k) => [k, new Array(days).fill(0)]));
+      const bump = (arr, ts) => { const i = idx.get(dayKey(ts)); if (i !== undefined) arr[i] += 1; };
+      const ub = (await st("users").list()).blobs.slice(0, 2000);
+      for (const rec of await Promise.all(ub.map((b) => st("users").get(b.key, { type: "json" })))) if (rec) bump(series.signups, rec.createdAt);
+      for (const b of (await st("posts").list()).blobs) bump(series.posts, 9e12 - Number(b.key.slice(0, 13)));
+      for (const b of (await st("comments").list()).blobs) bump(series.comments, Number(b.key.split("~")[1].slice(0, 13)));
+      for (const b of (await st("dms").list()).blobs) bump(series.messages, Number(b.key.split("~")[2].slice(0, 13)));
+      for (const b of (await st("active").list()).blobs) { const i = idx.get(b.key.split("~")[0]); if (i !== undefined) series.active[i] += 1; }
+      return send({ labels, series, members: ub.length });
+    }
+    if (method === "GET" && path === "/admin/backup") {
+      const name = url.searchParams.get("store");
+      if (!name) return send({ stores: BACKUP_STORES });
+      if (!BACKUP_STORES.includes(name)) throw new Fail(400, "Unknown store.");
+      const after = url.searchParams.get("after") || "";
+      const keys = (await st(name).list()).blobs.map((b) => b.key).sort().filter((k) => k > after);
+      const entries = []; let size = 0, next = null;
+      for (const k of keys) {
+        if (entries.length >= 300) { next = entries[entries.length - 1].k; break; }
+        let v, e;
+        if (name === "videos") { const buf = await st(name).get(k, { type: "arrayBuffer" }); if (!buf) continue; v = Buffer.from(buf).toString("base64"); e = { k, v, t: "b" }; }
+        else { v = await st(name).get(k); if (v === null) continue; e = { k, v }; }
+        if (entries.length && size + v.length > 4500000) { next = entries[entries.length - 1].k; break; }
+        entries.push(e); size += v.length;
+      }
+      return send({ store: name, entries, next, total: keys.length });
+    }
+    if (method === "POST" && path === "/admin/restore") {
+      const name = String(body.store ?? "");
+      if (!BACKUP_STORES.includes(name)) throw new Fail(400, "Unknown store.");
+      if (!Array.isArray(body.entries) || body.entries.length > 500) throw new Fail(400, "Send 500 entries or fewer at a time.");
+      let written = 0, skipped = 0, bad = 0;
+      for (const e of body.entries) {
+        const k = String(e?.k ?? ""), v = e?.v;
+        if (!/^[\w~.\-]{1,300}$/.test(k) || typeof v !== "string" || (name === "config" && k === "maintenance")) { bad += 1; continue; }
+        let val = v;
+        if (JSON_STORES.has(name) && !(v === "1" && (name === "notifs" || name === "reports"))) { // "1" values are de-duplication markers
+          let o; try { o = JSON.parse(v); } catch { bad += 1; continue; }
+          if (!o || typeof o !== "object" || (name === "users" && (typeof o.username !== "string" || typeof o.pass !== "string")) || (name === "wallets" && !(Number.isInteger(o.balance) && o.balance >= 0))) { bad += 1; continue; }
+        } else if (IMAGE_STORES.has(name)) { if (v.length > 1000000 || !IMG_RE.test(v)) { bad += 1; continue; } }
+        else if (name === "videos") { const buf = Buffer.from(v, "base64"); if (e.t !== "b" || buf.length > VIDEO_MAX || buf.length < 12) { bad += 1; continue; } val = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength); }
+        const r = await st(name).set(k, val, body.overwrite === true ? undefined : { onlyIfNew: true });
+        if (r?.modified === false) skipped += 1; else written += 1;
+      }
+      return send({ written, skipped, bad });
     }
     if (method === "POST" && path === "/admin/messaging") {
       const on = body.on === true;

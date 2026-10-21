@@ -45,10 +45,10 @@ const view = (key, rec) => {
     restricted: age < 13 || rec.restricted === true, theme: rec.theme || null,
     bio: rec.bio || "", early: rec.createdAt < EARLY, mustChange: rec.mustChange === true,
     flair: SHOP[rec.flair]?.emoji || null, color: rec.color ? rec.color.split(":")[1] : null,
-    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false, halloween: (rec.halloweenClaimed || 0) > 0,
+    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false, chatRequests: rec.chatRequests !== false, chatBanUntil: rec.chatBanUntil || 0, halloween: (rec.halloweenClaimed || 0) > 0,
     halloweenOk: (rec.halloweenClaimed || 0) > 0 && (Date.now() < HW_END || (rec.premiumUntil || 0) > Date.now()) };
 };
-const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, halloween: u.halloween, halloweenOk: u.halloweenOk, isDev: u.key === DEV });
+const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, chatRequests: u.chatRequests, chatBanUntil: u.chatBanUntil, halloween: u.halloween, halloweenOk: u.halloweenOk, isDev: u.key === DEV });
 
 const getUser = async (token) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
@@ -121,7 +121,7 @@ const SHOP = {
   "flair:ghost": { name: "Ghost Hunter badge (find every Halloween secret)", price: 0, kind: "flair", emoji: "👻", event: true },
 };
 for (const [k, i] of Object.entries(SHOP)) i.section = k === "freeze" ? "wcd" : "style"; // shop sections: WCD / Style
-const DAY_MS = 864e5, PREMIUM_PRICE = 200, PREMIUM_DAYS = 30, VIDEO_MAX = 3.5 * 1024 * 1024;
+const DAY_MS = 864e5, PREMIUM_PRICE = 200, PREMIUM_DAYS = 30, VIDEO_ONESHOT = 3.5 * 1024 * 1024, VIDEO_MAX = 10 * 1024 * 1024, VIDEO_PART = 2.5 * 1024 * 1024;
 // Halloween: free for everyone to claim during the event; after October 31 (US Eastern) only Premium members can claim or use it.
 const HW_END = Date.UTC(2026, 10, 1, 4, 0, 0);
 const HW_SECRETS = ["spider", "cobweb", "moon", "brand", "konami", "boo", "treat", "trick", "witching", "haunted"];
@@ -176,7 +176,7 @@ function parseVideo(v) {
   const b64 = v.slice(m[0].length);
   if (b64.length > 4.95e6 || !/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) throw new Fail(400, "That video file is too large or damaged.");
   const buf = Buffer.from(b64, "base64");
-  if (buf.length > VIDEO_MAX) throw new Fail(400, "Videos can be up to 3.5 MB (about 10 to 20 seconds).");
+  if (buf.length > VIDEO_ONESHOT) throw new Fail(400, "That video is too big for a single upload.");
   const mp4 = buf.length > 12 && buf.subarray(4, 8).toString("latin1") === "ftyp";
   const webm = buf.length > 12 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
   if (m[1] === "video/webm" ? !webm : !mp4) throw new Fail(400, "That doesn't look like a real video file.");
@@ -216,6 +216,40 @@ async function friendStatus(me, other) {
   if ((await F.get(`req~${other}~${me}`)) !== null) return "sent";
   return "none";
 }
+
+// Bump BUILD (here and CLIENT_BUILD in index.html) with every release: open pages then offer a refresh instead of breaking.
+const BUILD = "2026-10-14.1";
+const DEFAULT_EVENTS = { on: true, title: "Events", endsAt: Date.UTC(2026, 9, 19, 0, 30), note: "" }; // Sunday Oct 18, 2026, 8:30 PM US Eastern
+const fmtET = (ms) => new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }) + " (US Eastern)";
+// ---------- chat requests: start a chat with anyone in your own age group; they accept or decline ----------
+const canChat = async (a, b) => (await areFriends(a, b)) || (await st("chats").get(`ok~${a}~${b}`)) !== null;
+async function sendDM(fromKey, toKey, text) {
+  const ts = nextTs(), id = `${String(ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`;
+  await st("dms").set(`${convId(fromKey, toKey)}~${id}`, JSON.stringify({ id, from: fromKey, text, ts }));
+  const meta = JSON.stringify({ last: ts, lastFrom: fromKey, preview: text.slice(0, 60) });
+  await Promise.all([st("convs").set(`${fromKey}~${toKey}`, meta), st("convs").set(`${toKey}~${fromKey}`, meta), st("dmunread").set(`${toKey}~${fromKey}`, "1")]);
+  return { id, ts };
+}
+async function makeChat(a, b) {
+  const C = st("chats");
+  await C.set(`ok~${a}~${b}`, "1"); await C.set(`ok~${b}~${a}`, "1");
+  for (const k of [`req~${a}~${b}`, `req~${b}~${a}`, `out~${a}~${b}`, `out~${b}~${a}`]) await C.delete(k);
+}
+async function wipeConv(a, b) { // deletes every message in a conversation and its list entries
+  for (const m of (await st("dms").list({ prefix: `${convId(a, b)}~` })).blobs) await st("dms").delete(m.key);
+  for (const k of [`${a}~${b}`, `${b}~${a}`]) { await st("convs").delete(k); await st("dmunread").delete(k); }
+}
+const banCheck = (u) => {
+  if ((u.chatBanUntil || 0) > Date.now()) throw new Fail(403, `A moderator paused your chatting until ${fmtET(u.chatBanUntil)}. You can still read your chats and use the rest of the site.`, { banUntil: u.chatBanUntil });
+};
+// ---------- videos are stored in parts (up to 10 MB) so every request stays under the platform's 6 MB limit ----------
+const videoKeys = (post, id) => (post.videoParts ? Array.from({ length: post.videoParts }, (_, n) => `${id}~${n}`) : [id]);
+async function moveVideo(post, id, newId) {
+  const from = videoKeys(post, id), to = videoKeys(post, newId);
+  for (let i = 0; i < from.length; i++) { const b = await st("videos").get(from[i], { type: "arrayBuffer" }); if (b) await st("videos").set(to[i], b); }
+}
+async function dropVideo(post, id) { for (const k of videoKeys(post, id)) await st("videos").delete(k); }
+const looksLikeVideo = (buf, type) => buf.length > 12 && (type === "video/webm" ? (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) : buf.subarray(4, 8).toString("latin1") === "ftyp");
 
 // ---------- saved rate limits (shared by every server instance), word filter, activity ----------
 async function hitLimit(kind, id, max, windowMs) {
@@ -291,7 +325,7 @@ async function eraseUser(un) {
     const post = await P.get(b.key, { type: "json" });
     if (post && post.username.toLowerCase() === un) {
       await moveLikes(post, b.key, null, null); await moveComments(b.key, null);
-      await st("images").delete(b.key); await st("videos").delete(b.key); await P.delete(b.key);
+      await st("images").delete(b.key); await dropVideo(post, b.key); await P.delete(b.key);
     }
   }
   const C = st("comments");
@@ -318,12 +352,16 @@ async function eraseUser(un) {
   for (const b of (await st("bought").list({ prefix: `${un}~` })).blobs) { await st("sales").delete(`${b.key.split("~")[1]}~${un}`); await st("bought").delete(b.key); }
   for (const b of (await st("notifs").list({ prefix: `${un}~` })).blobs) await st("notifs").delete(b.key);
   for (const b of (await st("active").list()).blobs) if (b.key.endsWith(`~${un}`)) await st("active").delete(b.key);
+  const CH = st("chats");
+  for (const b of (await CH.list({ prefix: `ok~${un}~` })).blobs) { const o = b.key.split("~")[2]; await CH.delete(b.key); await CH.delete(`ok~${o}~${un}`); await wipeConv(un, o); }
+  for (const b of (await CH.list({ prefix: `req~${un}~` })).blobs) { const o = b.key.split("~")[2]; await CH.delete(b.key); await CH.delete(`out~${o}~${un}`); await wipeConv(un, o); }
+  for (const b of (await CH.list({ prefix: `out~${un}~` })).blobs) { const o = b.key.split("~")[2]; await CH.delete(b.key); await CH.delete(`req~${o}~${un}`); await wipeConv(un, o); }
   for (const b of (await st("hwsecrets").list({ prefix: `${un}~` })).blobs) await st("hwsecrets").delete(b.key);
   await st("wallets").delete(un); await st("avatars").delete(un);
   await st("users").set(un, JSON.stringify({ username: rec.username, displayName: "Deleted user", pass: "x:x", birthdate: "1900-01-01", createdAt: rec.createdAt, deleted: true }));
   return true;
 }
-const BACKUP_STORES = ["users", "wallets", "posts", "comments", "likes", "follows", "followers", "friends", "blocks", "dms", "convs", "dmunread", "notifs", "reports", "listings", "sales", "bought", "lsell", "images", "mimages", "videos", "avatars", "config", "active", "hwsecrets"];
+const BACKUP_STORES = ["users", "wallets", "posts", "comments", "likes", "follows", "followers", "friends", "blocks", "dms", "convs", "dmunread", "notifs", "reports", "listings", "sales", "bought", "lsell", "images", "mimages", "videos", "avatars", "config", "active", "hwsecrets", "chats", "audit"];
 const JSON_STORES = new Set(["users", "wallets", "posts", "comments", "dms", "convs", "notifs", "reports", "listings"]);
 const IMAGE_STORES = new Set(["images", "mimages", "avatars"]);
 
@@ -368,22 +406,23 @@ async function route(req, context) {
   let body = {};
   if (method === "POST") {
     const raw = await req.text();
-    if (raw.length > (path === "/posts" || path === "/admin/restore" ? 5300000 : 1500000)) throw new Fail(413, "That upload is too large.");
+    if (raw.length > (path === "/posts" || path === "/admin/restore" || path === "/video/part" ? 5300000 : 1500000)) throw new Fail(413, "That upload is too large.");
     try { body = raw ? JSON.parse(raw) : {}; } catch { throw new Fail(400, "Bad request."); }
     if (!body || typeof body !== "object") body = {};
   }
   const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
   const user = token ? await getUser(token) : null;
   const isDev = !!user && user.key === DEV;
-  const [m, siteRaw, mk, vk, upd, ck, hk] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging"), st("config").get("halloween")]);
-  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off", halloweenOn = hk === "on";
+  const [m, siteRaw, mk, vk, upd, ck, hk, evRaw] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging"), st("config").get("halloween"), st("config").get("events", { type: "json" })]);
+  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off", halloweenOn = hk === "on", evc = evRaw || DEFAULT_EVENTS;
   if (maint && !isDev && !["/status", "/login", "/me", "/logout", "/dev-recover", "/admin/restore"].includes(path))
     throw new Fail(503, "WC Blog is in scheduled maintenance.", { maintenance: true, message: site.msg || "", until: site.until || "" });
   const ip = context?.ip || "unknown";
   if (user) await markActive(user.key);
 
   if (method === "GET" && path === "/status")
-    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, halloween: halloweenOn, halloweenEnds: HW_END, update: upd || null });
+    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, halloween: halloweenOn, halloweenEnds: HW_END, update: upd || null, now: Date.now(), build: BUILD,
+      events: evc.on && Date.now() < evc.endsAt + 6 * 36e5 ? { title: evc.title, endsAt: evc.endsAt, note: evc.note || "" } : null });
 
   if (method === "POST" && path === "/signup") {
     await hitLimit("signup-ip", ip, 10, 60 * 60e3);
@@ -482,6 +521,10 @@ async function route(req, context) {
       if (typeof body.friendRequests !== "boolean") throw new Fail(400, "Bad request.");
       rec.friendRequests = body.friendRequests;
     }
+    if (body.chatRequests !== undefined) {
+      if (typeof body.chatRequests !== "boolean") throw new Fail(400, "Bad request.");
+      rec.chatRequests = body.chatRequests;
+    }
     await st("users").set(user.key, JSON.stringify(rec));
     return send({ user: pub(view(user.key, rec)) });
   }
@@ -562,7 +605,7 @@ async function route(req, context) {
       const nm = names.get(a), name = nm?.name || p.displayName;
       const reason = f ? "From someone you follow" : tl ? `Because you liked #${p.topic} posts` : al ? `Because you liked posts by ${name}` : null;
       return { score, reason, post: { id: p.id, title: p.title, topic: p.topic, body: p.body, rating: p.rating, hasImage: p.hasImage,
-        username: p.username, displayName: name, early: nm?.early === true, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true, hasVideo: !!p.hasVideo,
+        username: p.username, displayName: name, early: nm?.early === true, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true, hasVideo: !!p.hasVideo, videoParts: p.videoParts || (p.hasVideo ? 1 : 0), videoType: p.videoType || null, videoSize: p.videoSize || 0,
         boosted: (p.boostUntil || 0) > now, createdAt: p.createdAt, editedAt: p.editedAt || null,
         likes: n, liked: iLike.has(p.id), comments: cc.get(p.id) || 0 } };
     });
@@ -579,17 +622,25 @@ async function route(req, context) {
     const image = body.image ?? null;
     if (image !== null) checkImage(image);
     let vid = null;
-    if (body.video != null) {
+    if (body.video != null || body.videoUpload != null) {
       if (!user.premium) throw new Fail(403, "Video posts are a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
       if (!videosOn) throw new Fail(403, "Video uploads are paused right now.");
       if (image !== null) throw new Fail(400, "Choose an image or a video, not both.");
-      vid = parseVideo(body.video);
+      if (body.videoUpload != null) { // a video uploaded in parts (up to 10 MB) with /video/start and /video/part
+        const uid = String(body.videoUpload), up = /^[a-f0-9]{20}$/.test(uid) ? await st("uploads").get(`${user.key}~${uid}`, { type: "json" }) : null;
+        if (!up) throw new Fail(400, "That video upload expired. Please upload it again.");
+        if ((await st("vparts").list({ prefix: `${uid}~` })).blobs.length !== up.parts) throw new Fail(400, "The video didn't finish uploading. Please try again.");
+        vid = { chunked: true, uid, parts: up.parts, size: up.size, type: up.type };
+      } else vid = parseVideo(body.video);
     }
     const rating = user.restricted ? "all" : body.rating; // restricted accounts can't publish 13+ posts
     const id = postId(String(9e12 - Date.now()).padStart(13, "0"), rating, randomBytes(4).toString("hex"));
     if (image) await st("images").set(id, image);
-    if (vid) await st("videos").set(id, vid.data);
-    await st("posts").set(id, JSON.stringify({ id, title: t, topic: tp, body: bo, rating, hasImage: !!image, hasVideo: !!vid, videoType: vid?.type,
+    if (vid?.chunked) {
+      for (let n = 0; n < vid.parts; n++) { const b = await st("vparts").get(`${vid.uid}~${n}`, { type: "arrayBuffer" }); await st("videos").set(`${id}~${n}`, b); await st("vparts").delete(`${vid.uid}~${n}`); }
+      await st("uploads").delete(`${user.key}~${vid.uid}`);
+    } else if (vid) await st("videos").set(id, vid.data);
+    await st("posts").set(id, JSON.stringify({ id, title: t, topic: tp, body: bo, rating, hasImage: !!image, hasVideo: !!vid, videoType: vid?.type, videoParts: vid?.parts, videoSize: vid?.size,
       username: user.username, displayName: user.displayName, createdAt: Date.now() }));
     return send({ id });
   }
@@ -611,8 +662,8 @@ async function route(req, context) {
       const reports = isDev ? (await st("reports").list({ prefix: "r~" })).blobs.length : 0;
       let w0 = await walletOf(user.key); w0 = (await maybeRenew(user.key, w0)) || w0;
       const wv = walletView(w0);
-      const [um, rq] = await Promise.all([st("dmunread").list({ prefix: `${user.key}~` }), st("friends").list({ prefix: `req~${user.key}~` })]);
-      return send({ unread, reports, balance: wv.balance, streak: wv.streak, canCheckIn: wv.canCheckIn, freezes: wv.freezes, dms: um.blobs.length, requests: rq.blobs.length });
+      const [um, rq, cq] = await Promise.all([st("dmunread").list({ prefix: `${user.key}~` }), st("friends").list({ prefix: `req~${user.key}~` }), st("chats").list({ prefix: `req~${user.key}~` })]);
+      return send({ unread, reports, balance: wv.balance, streak: wv.streak, canCheckIn: wv.canCheckIn, freezes: wv.freezes, dms: um.blobs.length, requests: rq.blobs.length + cq.blobs.length });
     }
     const items = (await Promise.all(keys.slice(0, 30).map((k) => st("notifs").get(k, { type: "json" })))).filter(Boolean);
     return send({ items, unread });
@@ -730,22 +781,27 @@ async function route(req, context) {
     }
   }
 
-  if (path === "/friends" || path.startsWith("/friends/") || path.startsWith("/dm/")) {
+  if (path === "/friends" || path.startsWith("/friends/") || path.startsWith("/dm/") || path.startsWith("/chats/")) {
     if (!user) throw new Fail(401, "Log in first.");
     if (!msgOn) throw new Fail(403, "Messaging is paused right now.");
     const F = st("friends"), who = (k) => (KEY_RE.test(k) ? k : null);
     const shape = (names, k) => { const nm = names.get(k); return { username: nm?.user || k, displayName: nm?.name || k, flair: nm?.flair || null, color: nm?.color || null, premium: nm?.premium === true }; };
     if (method === "GET" && path === "/friends") {
-      const [fl, inc, out, bl, unr] = await Promise.all([F.list({ prefix: `f~${user.key}~` }), F.list({ prefix: `req~${user.key}~` }), F.list({ prefix: `out~${user.key}~` }),
-        st("blocks").list({ prefix: `${user.key}~` }), st("dmunread").list({ prefix: `${user.key}~` })]);
+      const C = st("chats");
+      const [fl, inc, out, bl, unr, cok, cin, cout] = await Promise.all([F.list({ prefix: `f~${user.key}~` }), F.list({ prefix: `req~${user.key}~` }), F.list({ prefix: `out~${user.key}~` }),
+        st("blocks").list({ prefix: `${user.key}~` }), st("dmunread").list({ prefix: `${user.key}~` }), C.list({ prefix: `ok~${user.key}~` }), C.list({ prefix: `req~${user.key}~` }), C.list({ prefix: `out~${user.key}~` })]);
       const third = (b) => b.key.split("~")[2], second = (b) => b.key.split("~")[1];
       const friends = fl.blobs.map(third), incoming = inc.blobs.map(third), outgoing = out.blobs.map(third), blocked = bl.blobs.map(second), unread = new Set(unr.blobs.map(second));
-      const convs = new Map(await Promise.all(friends.map(async (k) => [k, await st("convs").get(`${user.key}~${k}`, { type: "json" })])));
-      const names = await authorNames([...friends, ...incoming, ...outgoing, ...blocked].map((k) => ({ username: k })));
+      const chatters = cok.blobs.map(third).filter((k) => !friends.includes(k)), chatIn = cin.blobs.map(third), chatOut = cout.blobs.map(third);
+      const reqs = new Map(await Promise.all(chatIn.map(async (k) => [k, await C.get(`req~${user.key}~${k}`, { type: "json" })])));
+      const convs = new Map(await Promise.all([...friends, ...chatters].map(async (k) => [k, await st("convs").get(`${user.key}~${k}`, { type: "json" })])));
+      const names = await authorNames([...friends, ...incoming, ...outgoing, ...blocked, ...chatters, ...chatIn, ...chatOut].map((k) => ({ username: k })));
+      const entry = (k) => ({ ...shape(names, k), unread: unread.has(k), last: convs.get(k)?.last || 0, preview: convs.get(k)?.preview || "", lastFromMe: convs.get(k)?.lastFrom === user.key });
+      const byRecent = (x, y) => (y.unread - x.unread) || y.last - x.last;
       return send({
-        friends: friends.map((k) => ({ ...shape(names, k), unread: unread.has(k), last: convs.get(k)?.last || 0, preview: convs.get(k)?.preview || "", lastFromMe: convs.get(k)?.lastFrom === user.key }))
-          .sort((x, y) => (y.unread - x.unread) || y.last - x.last),
+        friends: friends.map(entry).sort(byRecent), chats: chatters.map(entry).sort(byRecent),
         incoming: incoming.map((k) => shape(names, k)), outgoing: outgoing.map((k) => shape(names, k)), blocked: blocked.map((k) => shape(names, k)),
+        chatIncoming: chatIn.map((k) => ({ ...shape(names, k), text: reqs.get(k)?.text || "", ts: reqs.get(k)?.ts || 0, msgId: reqs.get(k)?.id || null })), chatOutgoing: chatOut.map((k) => shape(names, k)),
       });
     }
     if (method === "POST" && path.startsWith("/friends/")) {
@@ -788,17 +844,66 @@ async function route(req, context) {
       const unfriend = async () => {
         for (const k of [`f~${user.key}~${t}`, `f~${t}~${user.key}`, `req~${user.key}~${t}`, `req~${t}~${user.key}`, `out~${user.key}~${t}`, `out~${t}~${user.key}`]) await F.delete(k);
         await st("dmunread").delete(`${user.key}~${t}`); await st("dmunread").delete(`${t}~${user.key}`);
+        for (const k of [`ok~${user.key}~${t}`, `ok~${t}~${user.key}`, `req~${user.key}~${t}`, `req~${t}~${user.key}`, `out~${user.key}~${t}`, `out~${t}~${user.key}`]) await st("chats").delete(k);
       };
       if (act === "remove") { await unfriend(); return send({ status: "none" }); }
       if (body.block === true) { await unfriend(); await st("blocks").set(`${user.key}~${t}`, "1"); return send({ blocked: true }); }
       await st("blocks").delete(`${user.key}~${t}`);
       return send({ blocked: false });
     }
+    if (method === "POST" && path.startsWith("/chats/")) {
+      const act = path.slice(7), t = who(String(body.username ?? "").toLowerCase());
+      if (!["start", "respond", "cancel"].includes(act)) throw new Fail(404, "Not found.");
+      if (!t) throw new Fail(404, "We couldn't find that person.");
+      if (t === user.key) throw new Fail(400, "That's you!");
+      const rec = await st("users").get(t, { type: "json" });
+      if (!rec || rec.suspended || rec.deleted) throw new Fail(404, "We couldn't find that person.");
+      const C = st("chats");
+      if (act === "start") {
+        limit(ip + "cs", 20);
+        banCheck(user);
+        const text = String(body.text ?? "").trim();
+        if (!text || text.length > 1000) throw new Fail(400, "Your first message must be 1–1000 characters.");
+        await checkWords(user.username, "message", text);
+        if (await blockedEither(user.key, t)) throw new Fail(403, "You can't start a chat with this person.");
+        if (!friendOk(user.age, ageOf(rec.birthdate))) throw new Fail(403, "You can only chat with people close to your own age.");
+        if (await canChat(user.key, t)) return send({ ...(await sendDM(user.key, t, text)), status: "chat" });
+        if (rec.chatRequests === false) throw new Fail(403, "This person isn't accepting new chats right now.");
+        if ((await C.get(`req~${t}~${user.key}`)) !== null) throw new Fail(409, "You already asked this person to chat. Wait for them to answer.");
+        if ((await C.get(`req~${user.key}~${t}`)) !== null) { // they asked you first, so this makes it a chat
+          await makeChat(user.key, t); await sendDM(user.key, t, text);
+          await notify(t, { type: "chat_accept", from: user.username, displayName: user.displayName }, "all");
+          return send({ status: "chat" });
+        }
+        if ((await C.list({ prefix: `out~${user.key}~` })).blobs.length >= 20) throw new Fail(400, "You have 20 chat requests waiting. Wait for answers first.");
+        const first = await sendDM(user.key, t, text); // the first message waits for their answer
+        await st("dmunread").delete(`${t}~${user.key}`); // a pending request counts once (as a request), not also as an unread chat
+        await C.set(`req~${t}~${user.key}`, JSON.stringify({ text: text.slice(0, 200), ts: Date.now(), id: first.id })); await C.set(`out~${user.key}~${t}`, "1");
+        await notifyOnce(`creq~${user.key}~${t}`, t, { type: "chat_request", from: user.username, displayName: user.displayName }, "all");
+        return send({ status: "requested" });
+      }
+      if (act === "respond") {
+        if ((await C.get(`req~${user.key}~${t}`)) === null) throw new Fail(404, "That chat request is gone.");
+        if (body.accept === true) {
+          banCheck(user);
+          if (await blockedEither(user.key, t)) throw new Fail(403, "You can't accept this chat.");
+          await makeChat(user.key, t);
+          await st("dmunread").set(`${user.key}~${t}`, "1"); // their first message is now an unread chat message
+          await notify(t, { type: "chat_accept", from: user.username, displayName: user.displayName }, "all");
+          return send({ status: "chat" });
+        }
+        await C.delete(`req~${user.key}~${t}`); await C.delete(`out~${t}~${user.key}`); await wipeConv(user.key, t);
+        if (body.block === true) await st("blocks").set(`${user.key}~${t}`, "1");
+        return send({ status: "none" });
+      }
+      await C.delete(`req~${t}~${user.key}`); await C.delete(`out~${user.key}~${t}`); await wipeConv(user.key, t);
+      return send({ status: "none" });
+    }
     const dm = path.match(/^\/dm\/([A-Za-z0-9_]{3,20})(?:\/(delete|report))?$/);
     if (dm) {
       const t = dm[1].toLowerCase(), act = dm[2];
       if (t === user.key) throw new Fail(400, "That's you!");
-      if (!(await areFriends(user.key, t))) throw new Fail(403, "You can only message your friends.");
+      if (!(await canChat(user.key, t)) && !(act === "report" && (await st("chats").get(`req~${user.key}~${t}`)) !== null)) throw new Fail(403, "You can only message friends and people who accepted your chat.");
       if (await blockedEither(user.key, t)) throw new Fail(403, "You can't message this person.");
       const cid = convId(user.key, t), M = st("dms");
       const allKeys = async () => (await M.list({ prefix: `${cid}~` })).blobs.map((b) => b.key).sort();
@@ -807,18 +912,15 @@ async function route(req, context) {
         const keys = (await allKeys()).filter((k) => k.split("~")[2] > after).slice(-60);
         const msgs = (await Promise.all(keys.map((k) => M.get(k, { type: "json" })))).filter(Boolean);
         await st("dmunread").delete(`${user.key}~${t}`);
-        return send({ friend: shape(await authorNames([{ username: t }]), t), messages: msgs.map((m) => ({ id: m.id, from: m.from, text: m.text, ts: m.ts })) });
+        return send({ friend: { ...shape(await authorNames([{ username: t }]), t), isFriend: await areFriends(user.key, t) }, messages: msgs.map((m) => ({ id: m.id, from: m.from, text: m.text, ts: m.ts })) });
       }
       if (method === "POST" && !act) {
         limit(ip + "dm", 40);
         const text = String(body.text ?? "").trim();
         if (!text || text.length > 1000) throw new Fail(400, "Messages must be 1–1000 characters.");
         await checkWords(user.username, "message", text);
-        const ts = nextTs(), id = `${String(ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`;
-        await M.set(`${cid}~${id}`, JSON.stringify({ id, from: user.key, text, ts }));
-        const meta = JSON.stringify({ last: ts, lastFrom: user.key, preview: text.slice(0, 60) });
-        await Promise.all([st("convs").set(`${user.key}~${t}`, meta), st("convs").set(`${t}~${user.key}`, meta), st("dmunread").set(`${t}~${user.key}`, "1")]);
-        return send({ id, ts });
+        banCheck(user);
+        return send(await sendDM(user.key, t, text));
       }
       const mid = String(body.id ?? "");
       if (method === "POST" && act && MSG_ID_RE.test(mid)) {
@@ -1034,7 +1136,7 @@ async function route(req, context) {
       await moveLikes(post, id, null, null);
       await moveComments(id, null);
       await st("images").delete(id);
-      await st("videos").delete(id);
+      await dropVideo(post, id);
       await st("posts").delete(id);
       return send({ ok: true });
     }
@@ -1053,24 +1155,54 @@ async function route(req, context) {
     const data = image === undefined ? (post.hasImage ? await st("images").get(id) : null) : image;
     if (data) await st("images").set(newId, data);
     const keepVideo = !!post.hasVideo && body.removeVideo !== true;
-    if (keepVideo && newId !== id) { const vb = await st("videos").get(id, { type: "arrayBuffer" }); if (vb) await st("videos").set(newId, vb); }
+    if (keepVideo && newId !== id) await moveVideo(post, id, newId);
     const next = { ...post, id: newId, title: t, topic: tp, body: bo, rating, hasImage: !!data, hasVideo: keepVideo, editedAt: Date.now() };
     await st("posts").set(newId, JSON.stringify(next));
-    if (newId !== id) { await st("posts").delete(id); await st("images").delete(id); await st("videos").delete(id); }
-    else { if (!data) await st("images").delete(id); if (!keepVideo) await st("videos").delete(id); }
+    if (newId !== id) { await st("posts").delete(id); await st("images").delete(id); await dropVideo(post, id); }
+    else { if (!data) await st("images").delete(id); if (!keepVideo) await dropVideo(post, id); }
     if (newId !== id || tp !== post.topic) await moveLikes(post, id, next, newId);
     if (newId !== id) await moveComments(id, newId);
     return send({ id: newId });
   }
 
+  if (method === "POST" && (path === "/video/start" || path === "/video/part")) {
+    if (!user) throw new Fail(401, "Log in first.");
+    if (!user.premium) throw new Fail(403, "Video posts are a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
+    if (!videosOn) throw new Fail(403, "Video uploads are paused right now.");
+    if (path === "/video/start") {
+      limit(ip + "vs", 10);
+      const { size, type, parts } = body;
+      if (!["video/mp4", "video/webm", "video/quicktime"].includes(type)) throw new Fail(400, "Videos must be MP4, WebM or MOV files.");
+      if (!Number.isInteger(size) || size < 13 || size > VIDEO_MAX) throw new Fail(400, "Videos can be up to 10 MB.");
+      if (parts !== Math.ceil(size / VIDEO_PART)) throw new Fail(400, "That upload plan doesn't add up.");
+      const uploadId = randomBytes(10).toString("hex");
+      await st("uploads").set(`${user.key}~${uploadId}`, JSON.stringify({ size, type, parts, ts: Date.now() }));
+      return send({ uploadId, partSize: VIDEO_PART });
+    }
+    limit(ip + "vp", 60);
+    const uid = String(body.uploadId ?? ""), n = body.n;
+    const up = /^[a-f0-9]{20}$/.test(uid) ? await st("uploads").get(`${user.key}~${uid}`, { type: "json" }) : null;
+    if (!up) throw new Fail(404, "That upload expired. Please start again.");
+    if (!Number.isInteger(n) || n < 0 || n >= up.parts) throw new Fail(400, "Bad part number.");
+    const b64 = typeof body.data === "string" ? body.data : "";
+    if (b64.length > 4.0e6 || !/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) throw new Fail(400, "That piece of the video is damaged.");
+    const buf = Buffer.from(b64, "base64"), want = n < up.parts - 1 ? VIDEO_PART : up.size - VIDEO_PART * (up.parts - 1);
+    if (buf.length !== want) throw new Fail(400, "That piece of the video is the wrong size.");
+    if (n === 0 && !looksLikeVideo(buf, up.type)) throw new Fail(400, "That doesn't look like a real video file.");
+    await st("vparts").set(`${uid}~${n}`, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    return send({ ok: true, n });
+  }
   const vm = method === "GET" && path.match(/^\/video\/([^/]+)$/);
   if (vm) {
     const id = vm[1];
     if (!ID_RE.test(id) || (restricted && id.includes("-t-"))) throw new Fail(404, "Not found.");
     const post = await st("posts").get(id, { type: "json" });
-    const buf = post?.hasVideo ? await st("videos").get(id, { type: "arrayBuffer" }) : null;
+    if (!post?.hasVideo) throw new Fail(404, "Not found.");
+    const n = parseInt(url.searchParams.get("part") || "0", 10), parts = post.videoParts || 1;
+    if (!(n >= 0 && n < parts)) throw new Fail(404, "Not found.");
+    const buf = await st("videos").get(post.videoParts ? `${id}~${n}` : id, { type: "arrayBuffer" });
     if (!buf) throw new Fail(404, "Not found.");
-    return new Response(buf, { headers: { "content-type": post.videoType || "video/mp4", "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" } });
+    return new Response(buf, { headers: { "content-type": post.videoType || "video/mp4", "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff", "x-video-parts": String(parts) } });
   }
 
   if (method === "GET" && path.startsWith("/image/")) {
@@ -1187,7 +1319,7 @@ async function route(req, context) {
       const circulation = (await Promise.all(wb.blobs.slice(0, 300).map((b) => st("wallets").get(b.key, { type: "json" })))).reduce((n, w) => n + (w?.balance || 0), 0);
       const recs = (await Promise.all(ub.blobs.slice(0, 300).map((b) => st("users").get(b.key, { type: "json" })))).filter(Boolean);
       const users = recs.map((r) => ({ username: r.username, displayName: r.displayName, createdAt: r.createdAt,
-        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now(), halloween: !!r.halloweenClaimed })).sort((a, b) => b.createdAt - a.createdAt);
+        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now(), halloween: !!r.halloweenClaimed, chatBanUntil: r.chatBanUntil || 0 })).sort((a, b) => b.createdAt - a.createdAt);
       return send({ counts: { users: ub.blobs.length, posts: pb.blobs.length, posts13: pb.blobs.filter((b) => b.key.includes("-t-")).length,
         likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, halloween: users.filter((u) => u.halloween).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
     }
@@ -1200,11 +1332,60 @@ async function route(req, context) {
       await st("users").set(key, JSON.stringify(rec));
       return send({ ok: true });
     }
+    if (method === "GET" && path === "/admin/chat") { // only reached from a report; every look is logged
+      const conv = String(url.searchParams.get("conv") ?? "");
+      if (!CONV_RE.test(conv)) throw new Fail(400, "Bad request.");
+      const keys = (await st("dms").list({ prefix: `${conv}~` })).blobs.map((b) => b.key).sort().slice(-100);
+      const messages = (await Promise.all(keys.map((k) => st("dms").get(k, { type: "json" })))).filter(Boolean).map((m) => ({ id: m.id, from: m.from, text: m.text, ts: m.ts }));
+      const ts = Date.now();
+      await st("audit").set(`${String(9e12 - ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`, JSON.stringify({ by: "dev", action: "view-chat", conv, ts }));
+      return send({ conv, messages });
+    }
+    if (method === "POST" && path === "/admin/chat-delete") {
+      const conv = String(body.conv ?? "");
+      if (!CONV_RE.test(conv)) throw new Fail(400, "Bad request.");
+      const [a, b] = conv.split("~");
+      await wipeConv(a, b);
+      if (body.close !== false) for (const k of [`ok~${a}~${b}`, `ok~${b}~${a}`, `req~${a}~${b}`, `req~${b}~${a}`, `out~${a}~${b}`, `out~${b}~${a}`]) await st("chats").delete(k);
+      const ts = Date.now();
+      await st("audit").set(`${String(9e12 - ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`, JSON.stringify({ by: "dev", action: "delete-chat", conv, ts }));
+      return send({ ok: true });
+    }
+    if (method === "POST" && path === "/admin/chat-ban") {
+      const key = String(body.username ?? "").toLowerCase(), hours = body.hours;
+      if (key === DEV) throw new Fail(400, "You can't ban the developer account.");
+      if (!Number.isInteger(hours) || hours < 0 || hours > 720) throw new Fail(400, "Hours must be a whole number from 0 (lift the ban) to 720 (30 days).");
+      const rec = KEY_RE.test(key) ? await st("users").get(key, { type: "json" }) : null;
+      if (!rec || rec.deleted) throw new Fail(404, "No such user.");
+      if (hours === 0) delete rec.chatBanUntil; else rec.chatBanUntil = Date.now() + hours * 36e5;
+      await st("users").set(key, JSON.stringify(rec));
+      if (hours > 0) await notify(key, { type: "chat_ban", until: rec.chatBanUntil, title: `A moderator found a chat inappropriate, so chatting is paused until ${fmtET(rec.chatBanUntil)}.` }, "all");
+      const ts = Date.now();
+      await st("audit").set(`${String(9e12 - ts).padStart(13, "0")}-${randomBytes(4).toString("hex")}`, JSON.stringify({ by: "dev", action: hours ? "chat-ban" : "chat-unban", user: key, hours, ts }));
+      return send({ until: rec.chatBanUntil || 0 });
+    }
+    if (method === "GET" && path === "/admin/events") return send(evc);
+    if (method === "POST" && path === "/admin/events") {
+      const title = String(body.title ?? "").trim(), note = String(body.note ?? "").trim(), endsAt = body.endsAt;
+      if (typeof body.on !== "boolean") throw new Fail(400, "Bad request.");
+      if (!title || title.length > 40) throw new Fail(400, "Give the countdown a title (up to 40 characters).");
+      if (note.length > 100) throw new Fail(400, "The note can be up to 100 characters.");
+      if (!Number.isInteger(endsAt) || endsAt > Date.now() + 400 * 864e5) throw new Fail(400, "Pick a valid end time within the next year.");
+      if (body.on && endsAt <= Date.now()) throw new Fail(400, "The end time must be in the future.");
+      const data = { on: body.on, title, endsAt, note };
+      await st("config").set("events", JSON.stringify(data));
+      return send(data);
+    }
     if (method === "POST" && path === "/admin/prune") { // clears out old security counters and expired login sessions
       const now = Date.now(); let rl = 0, sess = 0;
       for (const b of (await st("ratelimit").list()).blobs) { const r = await st("ratelimit").get(b.key, { type: "json" }); if (!r || now - r.start > 864e5) { await st("ratelimit").delete(b.key); rl += 1; } }
       for (const b of (await st("sessions").list()).blobs) { const x = await st("sessions").get(b.key, { type: "json" }); if (!x || now - x.t > 30 * 864e5) { await st("sessions").delete(b.key); sess += 1; } }
-      return send({ ratelimit: rl, sessions: sess });
+      let up = 0; // unfinished video uploads older than a day
+      for (const b of (await st("uploads").list()).blobs) {
+        const u = await st("uploads").get(b.key, { type: "json" });
+        if (!u || now - u.ts > 864e5) { const uid = b.key.split("~")[1]; for (const p of (await st("vparts").list({ prefix: `${uid}~` })).blobs) await st("vparts").delete(p.key); await st("uploads").delete(b.key); up += 1; }
+      }
+      return send({ ratelimit: rl, sessions: sess, uploads: up });
     }
     if (method === "POST" && path === "/admin/halloween") {
       const on = body.on === true;
@@ -1271,7 +1452,7 @@ async function route(req, context) {
           let o; try { o = JSON.parse(v); } catch { bad += 1; continue; }
           if (!o || typeof o !== "object" || (name === "users" && (typeof o.username !== "string" || typeof o.pass !== "string")) || (name === "wallets" && !(Number.isInteger(o.balance) && o.balance >= 0))) { bad += 1; continue; }
         } else if (IMAGE_STORES.has(name)) { if (v.length > 1000000 || !IMG_RE.test(v)) { bad += 1; continue; } }
-        else if (name === "videos") { const buf = Buffer.from(v, "base64"); if (e.t !== "b" || buf.length > VIDEO_MAX || buf.length < 12) { bad += 1; continue; } val = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength); }
+        else if (name === "videos") { const buf = Buffer.from(v, "base64"); if (e.t !== "b" || buf.length > VIDEO_ONESHOT || buf.length < 12) { bad += 1; continue; } val = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength); }
         const r = await st(name).set(k, val, body.overwrite === true ? undefined : { onlyIfNew: true });
         if (r?.modified === false) skipped += 1; else written += 1;
       }

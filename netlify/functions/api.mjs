@@ -45,10 +45,10 @@ const view = (key, rec) => {
     restricted: age < 13 || rec.restricted === true, theme: rec.theme || null,
     bio: rec.bio || "", early: rec.createdAt < EARLY, mustChange: rec.mustChange === true,
     flair: SHOP[rec.flair]?.emoji || null, color: rec.color ? rec.color.split(":")[1] : null,
-    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false, chatRequests: rec.chatRequests !== false, chatBanUntil: rec.chatBanUntil || 0, halloween: (rec.halloweenClaimed || 0) > 0,
+    premium: (rec.premiumUntil || 0) > Date.now(), premiumUntil: rec.premiumUntil || 0, friendRequests: rec.friendRequests !== false, chatRequests: rec.chatRequests !== false, chatBanUntil: rec.chatBanUntil || 0, christmas: (rec.christmasClaimed || 0) > 0, halloween: (rec.halloweenClaimed || 0) > 0,
     halloweenOk: (rec.halloweenClaimed || 0) > 0 && (Date.now() < HW_END || (rec.premiumUntil || 0) > Date.now()) };
 };
-const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, chatRequests: u.chatRequests, chatBanUntil: u.chatBanUntil, halloween: u.halloween, halloweenOk: u.halloweenOk, isDev: u.key === DEV });
+const pub = (u) => ({ username: u.username, displayName: u.displayName, forced: u.forced, restricted: u.restricted, theme: u.theme, bio: u.bio, early: u.early, mustChange: u.mustChange, flair: u.flair, color: u.color, premium: u.premium, premiumUntil: u.premiumUntil, friendRequests: u.friendRequests, chatRequests: u.chatRequests, chatBanUntil: u.chatBanUntil, christmas: u.christmas, halloween: u.halloween, halloweenOk: u.halloweenOk, isDev: u.key === DEV });
 
 const getUser = async (token) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
@@ -119,12 +119,16 @@ const SHOP = {
   "flair:tornado": { name: "Tornado badge", price: 75, kind: "flair", emoji: "🌪️" },
   "flair:pumpkin": { name: "Pumpkin badge (Halloween exclusive)", price: 0, kind: "flair", emoji: "🎃", event: true },
   "flair:ghost": { name: "Ghost Hunter badge (find every Halloween secret)", price: 0, kind: "flair", emoji: "👻", event: true },
+  "flair:tree": { name: "Christmas Tree badge (Christmas exclusive)", price: 0, kind: "flair", emoji: "🎄", event: true },
+  "flair:santa": { name: "Santa's Helper badge (find every Christmas secret)", price: 0, kind: "flair", emoji: "🎅", event: true },
 };
 for (const [k, i] of Object.entries(SHOP)) i.section = k === "freeze" ? "wcd" : "style"; // shop sections: WCD / Style
 const DAY_MS = 864e5, PREMIUM_PRICE = 200, PREMIUM_DAYS = 30, VIDEO_ONESHOT = 3.5 * 1024 * 1024, VIDEO_MAX = 10 * 1024 * 1024, VIDEO_PART = 2.5 * 1024 * 1024;
 // Halloween: free for everyone to claim during the event; after October 31 (US Eastern) only Premium members can claim or use it.
 const HW_END = Date.UTC(2026, 10, 1, 4, 0, 0);
 const HW_SECRETS = ["spider", "cobweb", "moon", "brand", "konami", "boo", "treat", "trick", "witching", "haunted"];
+// Christmas: the dev starts and closes the event whenever they like. People who claimed the theme can keep it afterwards (a dev switch).
+const XM_SECRETS = ["snowman", "wreath", "tree", "star", "gift", "sleigh", "snow", "jingle", "elf", "konami", "snowball", "icy", "morning", "cookies"];
 const premiumActive = (w) => (w.premiumUntil || 0) > Date.now();
 const freezeCap = (w) => (premiumActive(w) ? 5 : 3);
 const newWallet = () => ({ balance: 0, streak: 0, best: 0, lastDay: null, freezes: 0, owned: [], log: [] });
@@ -218,7 +222,7 @@ async function friendStatus(me, other) {
 }
 
 // Bump BUILD (here and CLIENT_BUILD in index.html) with every release: open pages then offer a refresh instead of breaking.
-const BUILD = "2026-10-14.1";
+const BUILD = "2026-10-16.1";
 const DEFAULT_EVENTS = { on: true, title: "Events", endsAt: Date.UTC(2026, 9, 19, 0, 30), note: "" }; // Sunday Oct 18, 2026, 8:30 PM US Eastern
 const fmtET = (ms) => new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }) + " (US Eastern)";
 // ---------- chat requests: start a chat with anyone in your own age group; they accept or decline ----------
@@ -352,6 +356,7 @@ async function eraseUser(un) {
   for (const b of (await st("bought").list({ prefix: `${un}~` })).blobs) { await st("sales").delete(`${b.key.split("~")[1]}~${un}`); await st("bought").delete(b.key); }
   for (const b of (await st("notifs").list({ prefix: `${un}~` })).blobs) await st("notifs").delete(b.key);
   for (const b of (await st("active").list()).blobs) if (b.key.endsWith(`~${un}`)) await st("active").delete(b.key);
+  for (const b of (await st("xmsecrets").list({ prefix: `${un}~` })).blobs) await st("xmsecrets").delete(b.key);
   const CH = st("chats");
   for (const b of (await CH.list({ prefix: `ok~${un}~` })).blobs) { const o = b.key.split("~")[2]; await CH.delete(b.key); await CH.delete(`ok~${o}~${un}`); await wipeConv(un, o); }
   for (const b of (await CH.list({ prefix: `req~${un}~` })).blobs) { const o = b.key.split("~")[2]; await CH.delete(b.key); await CH.delete(`out~${o}~${un}`); await wipeConv(un, o); }
@@ -361,7 +366,7 @@ async function eraseUser(un) {
   await st("users").set(un, JSON.stringify({ username: rec.username, displayName: "Deleted user", pass: "x:x", birthdate: "1900-01-01", createdAt: rec.createdAt, deleted: true }));
   return true;
 }
-const BACKUP_STORES = ["users", "wallets", "posts", "comments", "likes", "follows", "followers", "friends", "blocks", "dms", "convs", "dmunread", "notifs", "reports", "listings", "sales", "bought", "lsell", "images", "mimages", "videos", "avatars", "config", "active", "hwsecrets", "chats", "audit"];
+const BACKUP_STORES = ["users", "wallets", "posts", "comments", "likes", "follows", "followers", "friends", "blocks", "dms", "convs", "dmunread", "notifs", "reports", "listings", "sales", "bought", "lsell", "images", "mimages", "videos", "avatars", "config", "active", "hwsecrets", "xmsecrets", "chats", "audit"];
 const JSON_STORES = new Set(["users", "wallets", "posts", "comments", "dms", "convs", "notifs", "reports", "listings"]);
 const IMAGE_STORES = new Set(["images", "mimages", "avatars"]);
 
@@ -413,15 +418,16 @@ async function route(req, context) {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
   const user = token ? await getUser(token) : null;
   const isDev = !!user && user.key === DEV;
-  const [m, siteRaw, mk, vk, upd, ck, hk, evRaw] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging"), st("config").get("halloween"), st("config").get("events", { type: "json" })]);
-  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off", halloweenOn = hk === "on", evc = evRaw || DEFAULT_EVENTS;
+  const [m, siteRaw, mk, vk, upd, ck, hk, evRaw, xmRaw] = await Promise.all([st("config").get("maintenance"), st("config").get("site", { type: "json" }), st("config").get("market"), st("config").get("videos"), st("config").get("update", { type: "json" }), st("config").get("messaging"), st("config").get("halloween"), st("config").get("events", { type: "json" }), st("config").get("christmas", { type: "json" })]);
+  const maint = m === "on", site = siteRaw || {}, marketOn = mk !== "off", videosOn = vk !== "off", msgOn = ck !== "off", halloweenOn = hk === "on", evc = evRaw || DEFAULT_EVENTS, xm = xmRaw || { on: false, keep: true };
   if (maint && !isDev && !["/status", "/login", "/me", "/logout", "/dev-recover", "/admin/restore"].includes(path))
     throw new Fail(503, "WC Blog is in scheduled maintenance.", { maintenance: true, message: site.msg || "", until: site.until || "" });
   const ip = context?.ip || "unknown";
   if (user) await markActive(user.key);
+  const xmOk = (u) => !!u && u.christmas && (xm.on === true || xm.keep !== false); // claimed it, and the event is open (or closing keeps it)
 
   if (method === "GET" && path === "/status")
-    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, halloween: halloweenOn, halloweenEnds: HW_END, update: upd || null, now: Date.now(), build: BUILD,
+    return send({ maintenance: maint, message: site.msg || "", until: site.until || "", announcement: site.announcement || "", market: marketOn, videos: videosOn, messaging: msgOn, halloween: halloweenOn, halloweenEnds: HW_END, update: upd || null, now: Date.now(), build: BUILD, christmas: xm.on === true, christmasKeep: xm.keep !== false,
       events: evc.on && Date.now() < evc.endsAt + 6 * 36e5 ? { title: evc.title, endsAt: evc.endsAt, note: evc.note || "" } : null });
 
   if (method === "POST" && path === "/signup") {
@@ -495,9 +501,10 @@ async function route(req, context) {
     if (!user) throw new Fail(401, "Log in first.");
     const rec = await st("users").get(user.key, { type: "json" });
     if (body.theme !== undefined) {
-      if (!["light", "blue", "dark", "weather", "halloween"].includes(body.theme)) throw new Fail(400, "Unknown theme.");
+      if (!["light", "blue", "dark", "weather", "halloween", "christmas"].includes(body.theme)) throw new Fail(400, "Unknown theme.");
       if (body.theme === "weather" && !user.premium) throw new Fail(403, "Weather Mode is a WC Blog Premium perk. Get Premium in the Weather Credits shop.");
       if (body.theme === "halloween" && !user.halloweenOk) throw new Fail(403, user.halloween ? "After October 31, the Halloween theme is only for Premium members." : "Claim the Halloween theme first (it shows up as a pop-up during the event).");
+      if (body.theme === "christmas" && !xmOk(user)) throw new Fail(403, user.christmas ? "The Christmas event is over, so the Christmas theme is switched off right now." : "Claim the Christmas theme first (it shows up as a pop-up during the event).");
       rec.theme = body.theme;
     }
     if (body.restricted !== undefined) {
@@ -669,6 +676,37 @@ async function route(req, context) {
     return send({ items, unread });
   }
 
+  if (method === "GET" && path === "/christmas/secrets") {
+    if (!user) throw new Fail(401, "Log in first.");
+    return send({ found: (await st("xmsecrets").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]), total: XM_SECRETS.length });
+  }
+  if (method === "POST" && path === "/christmas/secret") {
+    if (!user) throw new Fail(401, "Log in first.");
+    limit(ip + "xs", 60);
+    if (!xmOk(user)) throw new Fail(403, "Unlock the Christmas theme to hunt for secrets.");
+    const id = String(body.id ?? "");
+    if (!XM_SECRETS.includes(id)) throw new Fail(400, "Unknown secret.");
+    const r = await st("xmsecrets").set(`${user.key}~${id}`, "1", { onlyIfNew: true });
+    const found = (await st("xmsecrets").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]);
+    let badge = false;
+    if (XM_SECRETS.every((x) => found.includes(x))) {
+      await updateWallet(user.key, (w) => { badge = false; if (w.owned.includes("flair:santa")) return; w.owned.push("flair:santa"); badge = true; });
+    }
+    return send({ id, isNew: r?.modified === true, found, total: XM_SECRETS.length, complete: found.length === XM_SECRETS.length, badge });
+  }
+  if (method === "POST" && path === "/christmas/claim") {
+    if (!user) throw new Fail(401, "Log in to claim it.");
+    if (!user.christmas && xm.on !== true) throw new Fail(403, "The Christmas event isn't open right now.");
+    let gift = false;
+    await updateWallet(user.key, (w) => { // the wallet is the gate, so a double-click can never pay twice
+      gift = false;
+      if (w.owned.includes("flair:tree")) return;
+      w.owned.push("flair:tree"); earn(w, 25, "event", "Christmas gift 🎄"); gift = true;
+    });
+    const rec = await st("users").get(user.key, { type: "json" });
+    if (!rec.christmasClaimed) { rec.christmasClaimed = Date.now(); await st("users").set(user.key, JSON.stringify(rec)); }
+    return send({ user: pub(view(user.key, rec)), gift });
+  }
   if (method === "GET" && path === "/halloween/secrets") {
     if (!user) throw new Fail(401, "Log in first.");
     return send({ found: (await st("hwsecrets").list({ prefix: `${user.key}~` })).blobs.map((b) => b.key.split("~")[1]), total: HW_SECRETS.length });
@@ -1319,9 +1357,9 @@ async function route(req, context) {
       const circulation = (await Promise.all(wb.blobs.slice(0, 300).map((b) => st("wallets").get(b.key, { type: "json" })))).reduce((n, w) => n + (w?.balance || 0), 0);
       const recs = (await Promise.all(ub.blobs.slice(0, 300).map((b) => st("users").get(b.key, { type: "json" })))).filter(Boolean);
       const users = recs.map((r) => ({ username: r.username, displayName: r.displayName, createdAt: r.createdAt,
-        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now(), halloween: !!r.halloweenClaimed, chatBanUntil: r.chatBanUntil || 0 })).sort((a, b) => b.createdAt - a.createdAt);
+        under13: ageOf(r.birthdate) < 13, suspended: !!r.suspended, early: r.createdAt < EARLY, premium: (r.premiumUntil || 0) > Date.now(), halloween: !!r.halloweenClaimed, christmas: !!r.christmasClaimed, chatBanUntil: r.chatBanUntil || 0 })).sort((a, b) => b.createdAt - a.createdAt);
       return send({ counts: { users: ub.blobs.length, posts: pb.blobs.length, posts13: pb.blobs.filter((b) => b.key.includes("-t-")).length,
-        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, halloween: users.filter((u) => u.halloween).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
+        likes: lb.blobs.length, comments: cb.blobs.length, reports: rb.blobs.length, credits: circulation, listings: mb.blobs.length, sales: sb.blobs.length, premium: users.filter((u) => u.premium).length, halloween: users.filter((u) => u.halloween).length, christmas: users.filter((u) => u.christmas).length, under13: users.filter((u) => u.under13).length, suspended: users.filter((u) => u.suspended).length }, users });
     }
     if (method === "POST" && path === "/admin/suspend") {
       const key = String(body.username ?? "").toLowerCase();
@@ -1331,6 +1369,13 @@ async function route(req, context) {
       rec.suspended = body.suspended === true;
       await st("users").set(key, JSON.stringify(rec));
       return send({ ok: true });
+    }
+    if (method === "GET" && path === "/admin/christmas") return send({ on: xm.on === true, keep: xm.keep !== false });
+    if (method === "POST" && path === "/admin/christmas") { // start or close the Christmas event at any time
+      if (typeof body.on !== "boolean") throw new Fail(400, "Bad request.");
+      const data = { on: body.on, keep: body.keep !== false };
+      await st("config").set("christmas", JSON.stringify(data));
+      return send(data);
     }
     if (method === "GET" && path === "/admin/chat") { // only reached from a report; every look is logged
       const conv = String(url.searchParams.get("conv") ?? "");
